@@ -32,6 +32,7 @@ rm(list=ls())
 library(ggplot2)
 library(tidyverse)
 library(readr)
+library(lubridate)
 ```
 
 And load the data.
@@ -74,6 +75,18 @@ Nest_18INUND <- read_csv("data/2018Nest_INUND.csv", col_types = nest18.cols)
 
 
 Make some plots:
+
+```{r}
+ggplot() + 
+  geom_point(data = inund,
+             aes(x = Dist_Berm,
+                 y = InundHeight_AbvLAT,
+                 color = Inund_Month,
+                 shape = as.factor(Transect)))
+```
+
+And in the log scale:
+
 ```{r}
 ggplot() + 
   geom_point(data = inund,
@@ -83,7 +96,94 @@ ggplot() +
                  shape = as.factor(Transect)))
 ```
 
+Even at the log scale, some don't look linear (e.g., transect 5 (crosses)). Take a look at them more closely.  First, split them into two years.
+
+```{r}
+inund %>% mutate(Year = ifelse(Date < as.Date("2018-05-01"), 2018, 2019)) %>%
+  mutate(Month = month(Date)) %>%
+  mutate(Transect_f = as.factor(Transect)) -> inund
+
+inund.2018 <- filter(inund, Year == 2018)
+inund.2019 <- filter(inund, Year == 2019)
+
+```
+
+Then plot one year at a time.
+
+```{r}
+ggplot() + 
+  geom_point(data = inund.2018,
+             aes(x = Dist_Berm,
+                 y = log(InundHeight_AbvLAT),
+                 color = as.factor(Month),
+                 shape = Transect_f))
+```
+
+
+```{r}
+ggplot() + 
+  geom_point(data = inund.2019,
+             aes(x = Dist_Berm,
+                 y = log(InundHeight_AbvLAT),
+                 color = as.factor(Month),
+                 shape = as.factor(Transect)))
+```
+
+I think non-linear models (or polynomial) are probably better than linear models...  
+
+```{r}
+ggplot() + 
+  geom_point(data = inund.2018,
+             aes(x = Dist_Berm,
+                 y = log(InundHeight_AbvLAT),
+                 color = as.factor(Month))) +
+  #facet_grid(. ~ Transect_f) +
+  facet_wrap(~ Transect_f, nrow = 2)
+
+# ggsave(filename = "figures/InundHeight_2018.png",
+#        device = "png", dpi = 600)
+```
+
+```{r}
+ggplot() + 
+  geom_point(data = inund.2019,
+             aes(x = Dist_Berm,
+                 y = log(InundHeight_AbvLAT),
+                 color = as.factor(Month))) +
+  #facet_grid(. ~ Transect_f) +
+  facet_wrap(~ Transect_f, nrow = 2)
+
+# ggsave(filename = "figures/InundHeight_2019.png",
+#        device = "png", dpi = 600)
+```
+
+When I add Berm_elevation, variability decreases... maybe on to something? 
+
+```{r}
+ggplot() + 
+  geom_point(data = inund.2018,
+             aes(x = Dist_Berm,
+                 y = log(InundHeight_AbvLAT + Berm_elevation),
+                 color = as.factor(Month))) +
+  #facet_grid(. ~ Transect_f) +
+  facet_wrap(~ Transect_f, nrow = 2)
+
+# ggsave(filename = "figures/InundHeight_Berm_2018.png",
+#        device = "png", dpi = 600)
+```
 
 
 
+```{r}
+ggplot() + 
+  geom_point(data = inund.2019,
+             aes(x = Dist_Berm,
+                 y = log(InundHeight_AbvLAT + Berm_elevation),
+                 color = as.factor(Month))) +
+  #facet_grid(. ~ Transect_f) +
+  facet_wrap(~ Transect_f, nrow = 2)
+
+# ggsave(filename = "figures/InundHeight_Berm_2019.png",
+#        device = "png", dpi = 600)
+```
 
