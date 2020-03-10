@@ -1,0 +1,89 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Request from Andy Dunstan on the following problem.
+
+Email from AD on Feb 24, 2020:
+
+Here is another query for your advice if you have the time and inclination – much appreciated if you do. It’s another one of those limited data situations where there is a good time series but limited number of logger locations available. Am wondering if this may suit a statistical model similar to the limited sample data points available for hatchling counts?
+
+We wish to determine a best fit maximum inundation curve (berm to back swale across the beach) for months of Dec, Jan, Feb and March if possible. At the moment the model used is the best fit regression curve from peak inundation data at each logger location. The distance of logger locations from the berm does change with island shifts and changes to the berm over season and years and has been measured with dGPS surveys. This provides a range of slightly different logger-berm distance points to use and hopefully increases the confidence levels in a calculated curve. However …. am hoping there may be a better method to fit the curve and provide confidence limits or if this is indeed the best model then a good suggestion for statistical justification of this curve?
+
+This curve would then be correlated with nest locations (distance from berm) and elevations (calculated from the curve where x-axis is distance from berm) to infer inundation from the curve. (eg. Above top of nest, marginal to level of middle of nest or no inundation as three categories). Data suggests some variation in inundation curve profiles around the island at the four different transects however not too radical. There is a definite outlier to this in the NW (mooring) beach area when Westerly winds have lowered the berm and peak tide levels are above this berm height resulting in inundation across the entire beach width – can be treated separately.
+
+End of AD's email.
+
+Additionally, the original request is from Owen Coffee:
+
+The intention in this workbook is to define a predicted monthly max inundation curve for the whole of island based on the inundation data from the loggers at the 4 transects around the beach. At present the produced predicted curves are the log. Regression of the max inundation points for each month ± a 95% conf. interval. The relationships between the curves however are variable which look to be related to sample size and variation between sectors. Having defined these predicted inundation curves the marked nests are then plotted against these predictions and any nest with the 95% conf. interval or below the inundation height is predicted to have been inundated. The intention is then to review the hatching success and development phases of failed eggs for these nests identified as inundated to determine whether the predicted inundation events correlate with the phases of failed eggs.
+
+Any comments/suggestions on improvements in determining the best regression model to fit the different months or potentially an improved method to define a predicted monthly max inundation curve which allows smoothing of the produced curve, and whether it possible to automate the identification of inundated nests (as this process is currently manual) would be greatly appreciated.
+
+End of OC's email
+
+First, as usual, I look at the data in different ways.
+
+Load essential libraries first.
+
+```{r}
+rm(list=ls())
+library(ggplot2)
+library(tidyverse)
+library(readr)
+```
+
+And load the data.
+
+```{r}
+
+inund.cols <- cols(
+   Transect = col_double(),
+   Post = col_double(),
+   InundHeight_AbvLAT = col_double(),
+   Dist_Berm = col_double(),
+   Berm_elevation = col_double(),
+   BermSurvey_Month = col_character(),
+   Inund_Month = col_character(),
+   Date = col_date(format = "%d/%m/%Y"),
+   Time = col_time(format = "%H:%M:%S %p"))
+
+inund <- read_csv("data/inundationRaine.csv", col_types = inund.cols)
+#View(inund)
+
+nestmap.cols <- cols(
+     Nest_ID = col_double(),
+     Nest_Easting = col_double(),
+     Nest_Northing = col_double(),
+     Nest_Elevation = col_double(),
+     BermDist_m = col_double())
+
+Nest_18Map <- read_csv("data/2018Nest_mapping.csv", col_types = nestmap.cols)
+#View(Nest_18Map)
+
+nest18.cols <- cols(
+   Nest_ID = col_double(),
+   Nest_Easting = col_double(),
+   Nest_Northing = col_double(),
+   Nest_Elevation = col_double(),
+   BermDist_m = col_double(),
+   inundated = col_character())
+Nest_18INUND <- read_csv("data/2018Nest_INUND.csv", col_types = nest18.cols)
+```
+
+
+Make some plots:
+```{r}
+ggplot() + 
+  geom_point(data = inund,
+             aes(x = Dist_Berm,
+                 y = log(InundHeight_AbvLAT),
+                 color = Inund_Month,
+                 shape = as.factor(Transect)))
+```
+
+
+
+
+
