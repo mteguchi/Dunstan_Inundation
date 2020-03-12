@@ -137,8 +137,8 @@ ggplot() +
              aes(x = Dist_Berm,
                  y = log(InundHeight_AbvLAT),
                  color = as.factor(Month))) +
-  #facet_grid(. ~ Transect_f) +
-  facet_wrap(~ Transect_f, nrow = 2)
+  facet_wrap(~ Transect_f, nrow = 2)  
+  #geom_smooth(method = "loess", size = 1.5)    # this doesn't work - too small sample size
 
 # ggsave(filename = "figures/InundHeight_2018.png",
 #        device = "png", dpi = 600)
@@ -185,5 +185,199 @@ ggplot() +
 
 # ggsave(filename = "figures/InundHeight_Berm_2019.png",
 #        device = "png", dpi = 600)
+```
+
+We should be able to have a model that is fitted to all transects but each transect having its slope and intercept (random slope and intercept). 
+
+First, transform some variables:
+
+```{r}
+inund %>% mutate(Year2 = ifelse(Year == 2018, 1, 2),
+                 Month2 = ifelse(Month > 9, Month - 9, Month + 3),
+                 Transect2 = Transect - 1,
+                 log_inund = log(InundHeight_AbvLAT)) -> inund
+
+
+```
+
+The small sample size makes it difficult to fit complicated models. Separating by months will not work with just a couple data points in some cases. So, I'm going to include all months. Then, extract just Dec - March. In the next two figures, data from Oct, Nov, and April are in orange. Will eliminating those will affect regression equations? 
+
+```{r}
+inund.2018 %>% filter(Month > 11 | Month < 4) -> inund.2018.1
+inund.2018 %>% filter(Month < 12 & Month > 3) -> inund.2018.2
+
+ggplot() + 
+  geom_point(data = inund.2018.1,
+             aes(x = Dist_Berm,
+                 y = log(InundHeight_AbvLAT))) +
+  geom_point(data = inund.2018.2,
+             aes(x = Dist_Berm,
+                 y = log(InundHeight_AbvLAT)),
+             color = "orange") +
+  facet_wrap(~ Transect_f, nrow = 2)  
+  #geom_smooth(method = "loess", size = 1.5)    # this doesn't work - too small sample size
+
+# ggsave(filename = "figures/InundHeight_2018.png",
+#        device = "png", dpi = 600)
+```
+
+For 2018, including those three months will affect transects 2 and 3 a little (lower intercepts and slope) but probably not much for transects 4 and 5. 
+
+```{r}
+inund.2019 %>% filter(Month > 11 | Month < 4) -> inund.2019.1
+inund.2019 %>% filter(Month < 12 & Month > 3) -> inund.2019.2
+
+ggplot() + 
+  geom_point(data = inund.2019.1,
+             aes(x = Dist_Berm,
+                 y = log(InundHeight_AbvLAT))) +
+  geom_point(data = inund.2019.2,
+             aes(x = Dist_Berm,
+                 y = log(InundHeight_AbvLAT)),
+             color = "orange") +
+  facet_wrap(~ Transect_f, nrow = 2)  
+  #geom_smooth(method = "loess", size = 1.5)    # this doesn't work - too small sample size
+
+# ggsave(filename = "figures/InundHeight_2018.png",
+#        device = "png", dpi = 600)
+```
+
+For 2019, including those three months will provide regression for transect 2. No data were available for transect 2 in Dec through March. Just looking at these plots, I don't think slopes or intercepts will change significantly just by having these data points. Leaving them in will give us a few more data points, which are useful when the entire dataset is so small. 
+
+
+```{r}
+library(jagsUI)
+library(bayesplot)
+
+jags.data <- list(y = inund$log_inund,
+                  transect = inund$Transect2,
+                  Dist_Berm = inund$Dist_Berm,
+                  year = inund$Year2,
+                  N = nrow(inund))
+
+MCMC.params <- list(n.samples = 10000,
+                    n.burnin = 5000,
+                    n.thin = 5,
+                    n.chains = 5)
+
+parameters <- c("b0", "b1", "b2", "sigma.y", "deviance")
+
+MCMC.params$model.file = "models/Model_linear_all.txt"
+
+#if (!file.exists("RData/linear_all.rds")){
+  jm <- jags(data = jags.data,
+             #inits = inits,
+             parameters.to.save= parameters,
+             model.file = MCMC.params$model.file,
+             n.chains = MCMC.params$n.chains,
+             n.burnin = MCMC.params$n.burnin,
+             n.thin = MCMC.params$n.thin,
+             n.iter = MCMC.params$n.samples,
+             DIC = T, 
+             parallel=T)
+
+#   saveRDS(jm, file = "RData/linear_all.rds")  
+# } else {
+#   jm <- readRDS("RData/linear_all.rds")
+# }
+
+summary(jm)  
+
+# check some posteriors
+mcmc_trace(jm$samples, pars = c("b0[1]", "b0[2]", "b0[3]", "b0[4]"))
+mcmc_trace(jm$samples, pars = c("b1[1]", "b1[2]", "b1[3]", "b1[4]"))
+mcmc_trace(jm$samples, pars = c("b2[1]", "b2[2]"))
+
+# they all look good.
+
+```
+
+Do predictions.
+
+```{r}
+extract.samples <- function(varname, zm){
+  dev <- unlist(lapply(zm, FUN = function(x) x[, varname]))
+  return(dev)
+}
+
+b0 <- b1 <- vector(mode = "list", length = 4)
+for (k in 1:4){
+  b0[[k]] <- extract.samples(paste0("b0[", k, "]"), jm$samples)
+  b1[[k]] <- extract.samples(paste0("b1[", k, "]"), jm$samples)
+}
+
+b2 <- vector(mode = "list", length = 2)
+for (k in 1:2){
+  b2[[k]] <- extract.samples(paste0("b2[", k, "]"), jm$samples)
+}
+
+Dvec <- seq(0, 80, by = 1)  # min and max of Distance from Berm
+Yvec <- c(1, 2)
+
+pred.Y <- vector(mode = "list", length = 8)
+k <- y <- c <- 1
+for (k in 1:4){      # transects
+  for (y in 1:2){    # years
+    pred.Y[[c]] <- b0[[k]] + b1[[k]] %*% t(Dvec) + b2[[y]] * Yvec[y]
+    #pred.Y.med[[c]] <- jm$q50$b0[k] + jm$q50$b1[k] %*% t(Dvec) + jm$q50$b2[y] * Yvec[y]
+    #pred.Y.high[[c]] <- jm$q97.5$b0[k] + jm$q97.5$b1[k] %*% t(Dvec) + jm$q97.5$b2[y] * Yvec[y]
+    c <- c + 1
+  }
+  
+}
+
+# get quantiles
+
+qtiles <- lapply(pred.Y, 
+                 FUN = function(x) apply(x, MARGIN = 2, 
+                                         FUN = quantile, c(0.025, 0.5, 0.975)))
+
+qtiles.mat <- data.frame(do.call(rbind, lapply(qtiles, FUN = t)))
+
+year.vec <- rep(rep(c(1,2), each = length(Dvec)), 4)
+transect.vec <- rep(c(1,2, 3, 4), each = length(Dvec) * length(Yvec))
+
+pred.df <- data.frame(Transect_f = as.factor(transect.vec + 1), 
+                       Year = year.vec + 2017, 
+                       Dist_Berm = rep(Dvec, 4 * length(Yvec)),
+                       pred_low = qtiles.mat$X2.5., 
+                       pred_med = qtiles.mat$X50., 
+                       pred_high = qtiles.mat$X97.5.)
+
+pred.df %>% filter(Year == 2018) -> pred.df.2018
+ggplot() + 
+  geom_point(data = inund.2018,
+             aes(x = Dist_Berm,
+                 y = InundHeight_AbvLAT)) +
+  geom_path(data = pred.df.2018,
+            aes(x = Dist_Berm,
+                 y = exp(pred_med))) +
+  geom_ribbon(data = pred.df,
+              aes(x = Dist_Berm,
+                  ymin = exp(pred_low),
+                  ymax = exp(pred_high)),
+              alpha = 0.5) +
+  facet_wrap(~ Transect_f, nrow = 2)  
+
+```
+
+Not sure why bands are jagged... they should be smooth...
+
+```{r}
+pred.df %>% filter(Year == 2019) -> pred.df.2019
+ggplot() + 
+  geom_point(data = inund.2019,
+             aes(x = Dist_Berm,
+                 y = InundHeight_AbvLAT)) +
+  geom_path(data = pred.df.2019,
+            aes(x = Dist_Berm,
+                 y = exp(pred_med))) +
+  geom_ribbon(data = pred.df,
+              aes(x = Dist_Berm,
+                  ymin = exp(pred_low),
+                  ymax = exp(pred_high)),
+              alpha = 0.5) +
+  facet_wrap(~ Transect_f, nrow = 2)  
+
 ```
 

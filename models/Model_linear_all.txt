@@ -3,10 +3,13 @@
 
 model{
 	for (i in 1:N){
-		mu.y[i] <- b0[transect[i]] + b1[transect[i]] * Dist_Berm[i] + b2[year[i]] * year[i] + b3[month[i]] * month[i]
+		mu.y[i] <- b0[transect[i]] + b1[transect[i]] * Dist_Berm[i] + b2[year[i]] * year[i]
 		y[i] ~ dnorm(mu.y[i], tau.y)  
 	}
+	
 	sigma.y <- sqrt(1/tau.y)
+
+	tau.y ~ dgamma(0.1, 0.01)
 
 	for (k in 1:4){
 		b0[k] ~ dnorm(0, 0.01)
@@ -15,10 +18,6 @@ model{
 
 	for (k in 1:2){
 		b2[k] ~ dnorm(0, 0.01)
-	}
-
-	for (k in 1:7){
-		b3[k] ~ dnorm(0, 0.01)
 	}
 
 }
