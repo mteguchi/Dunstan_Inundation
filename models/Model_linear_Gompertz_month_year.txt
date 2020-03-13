@@ -1,0 +1,27 @@
+# JAGS model to fit a linear model to water height vs. distance from berm
+
+
+model{
+	for (i in 1:N){
+		# b0 is the asymptote, which should be the same for all combinations (year, transect, month)
+		# b1 is displacement along the x axis = intercept (month-specific)
+		# b2 is the rate of change = steepness (constant?)
+		mu.y[i] <- b0[month[i], year[i]] - b1[month[i], year[i]] * exp(- b2 * Dist_Berm[i])
+		y[i] ~ dnorm(mu.y[i], tau.y)  
+	}
+	
+	sigma.y <- sqrt(1/tau.y)
+
+	tau.y ~ dgamma(0.1, 0.01)
+
+	for (k in 1:n.months){		
+		for (k1 in 1:n.years){
+			b1[k, k1] ~ dnorm(0, 0.01)I(0,)
+			b0[k, k1] ~ dnorm(0, 0.01)		
+		}
+
+	}
+
+	b2 ~ dnorm(0, 0.01)I(0,)
+
+}

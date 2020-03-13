@@ -33,6 +33,157 @@ library(ggplot2)
 library(tidyverse)
 library(readr)
 library(lubridate)
+library(jagsUI)
+library(bayesplot)
+
+# a function to extract posterior samples from jags output
+extract.samples <- function(varname, zm){
+  dev <- unlist(lapply(zm, FUN = function(x) x[, varname]))
+  return(dev)
+}
+
+# A function to find 95% CI for predictions
+extract.prediction <- function(zm, jags.data){
+  if (length(grep("n.transects", names(jags.data))) > 0){
+    length.b <- jags.data$n.transects
+  } else if (length(grep("n.months", names(jags.data))) > 0){
+    length.b <- jags.data$n.months
+  }
+  
+  b0 <- b1 <- b12 <- vector(mode = "list", length = length.b)
+  k <- 1
+  for (k in 1:length.b){
+    b0[[k]] <- extract.samples(paste0("b0[", k, "]"), zm$samples)
+    b1[[k]] <- extract.samples(paste0("b1[", k, "]"), zm$samples)
+    
+    # in case of poly2
+    if (length(grep("b12", unlist(dimnames(zm$samples[[1]])))) > 0){
+      b12[[k]] <- extract.samples(paste0("b12[", k, "]"), zm$samples)
+    } else {
+      b12[[k]] <- rep(0, length(b0[[k]]))
+    }
+  }
+  length.year <- jags.data$n.years
+  
+  b2 <- vector(mode = "list", length = length.year)
+  for (k in 1:length.year){
+    b2[[k]] <- extract.samples(paste0("b2[", k, "]"), zm$samples)
+  }
+  
+  Dvec <- seq(0, 80, by = 1)  # min and max of Distance from Berm
+  Yvec <- seq(1, length.year)
+  
+  pred.Y <- vector(mode = "list", length = (length.year * length.b))
+  k <- y <- c <- 1
+  for (k in 1:length.b){      # transects/months
+    for (y in 1:length.year){    # years
+      pred.Y[[c]] <- b0[[k]] + b1[[k]] %*% t(Dvec) + 
+        b12[[k]] %*% t(Dvec^2) + b2[[y]] * Yvec[y]
+      
+      c <- c + 1
+    }
+    
+  }
+  
+  coefs <- c(b0, b1, b12, b2)
+  # get quantiles
+  
+  qtiles <- lapply(pred.Y, 
+                   FUN = function(x) apply(x, MARGIN = 2, 
+                                           FUN = quantile, c(0.025, 0.5, 0.975)))
+  
+  qtiles.mat <- data.frame(do.call(rbind, lapply(qtiles, FUN = t)))
+  
+  year.vec <- rep(rep(seq(1, length.year), 
+                      each = length(Dvec)), 
+                  length.b)
+  
+  b.vec <- rep(seq(1, length.b), each = length(Dvec) * length(Yvec))
+
+  if (length(grep("n.transects", names(jags.data))) > 0){
+    pred.df <- data.frame(Transect_f = as.factor(b.vec + 1), 
+                          Year = year.vec + 2017, 
+                          Dist_Berm = rep(Dvec, length.b * length(Yvec)),
+                          pred_low = qtiles.mat$X2.5., 
+                          pred_med = qtiles.mat$X50., 
+                          pred_high = qtiles.mat$X97.5.)
+  } else if (length(grep("n.months", names(jags.data))) > 0){
+    pred.df <- data.frame(Month2 = b.vec, 
+                          Year = year.vec + 2017, 
+                          Dist_Berm = rep(Dvec, length.b * length(Yvec)),
+                          pred_low = qtiles.mat$X2.5., 
+                          pred_med = qtiles.mat$X50., 
+                          pred_high = qtiles.mat$X97.5.)
+
+  }
+
+  out.list <- list(pred.df = pred.df,
+                   coefs = coefs)
+  
+  return(out.list)
+}
+
+# extract posteriors from Gompertz output
+# This function is not working... fix this 2020-03-13!
+extract.prediction.Gompertz <- function(zm, jags.data){
+  length.b <- jags.data$n.months * jags.data$n.years
+  length.year <- jags.data$n.years
+  
+  b0 <- b1 <- b12 <- vector(mode = "list", length = length.b)
+  c <- 1
+  for (k1 in 1:length.year){
+    for (k in 1:jags.data$n.months){
+      b0[[c]] <- extract.samples(paste0("b0[", k, ",", k1, "]"), zm$samples)
+      b1[[c]] <- extract.samples(paste0("b1[", k, ",", k1, "]"), zm$samples)
+      c <- c + 1
+    }
+  }
+  
+  b2 <- extract.samples("b2", zm$samples)
+  
+  Dvec <- seq(1, 80, by = 1)  # min and max of Distance from Berm
+  Yvec <- seq(1, length.year)
+  
+  pred.Y <- vector(mode = "list", length = length.b)
+  k <- y <- c <- 1
+  for (y in 1:length.year){    # years
+    for (k in 1:jags.data$n.months){      # months
+      pred.Y[[c]] <- b0[[c]] - b1[[c]] * exp(- b2 %*% t(Dvec))
+      c <- c + 1
+    }
+    
+  }
+  
+  coefs <- c(b0, b1, b2)
+  # get quantiles
+  
+  qtiles <- lapply(pred.Y, 
+                   FUN = function(x) apply(x, MARGIN = 2, 
+                                           FUN = quantile, c(0.025, 0.5, 0.975)))
+  
+  qtiles.mat <- data.frame(do.call(rbind, lapply(qtiles, FUN = t)))
+  
+  year.vec <- rep(seq(1, length.year), 
+                      each = length(Dvec) * jags.data$n.months * length.year)
+  
+  b.vec <- rep(rep(seq(1, jags.data$n.months), 
+                   each = length(Dvec)), 
+               length.year)
+
+  pred.df <- data.frame(Month2 = b.vec, 
+                        Year = year.vec + 2017, 
+                        Dist_Berm = rep(Dvec, length.b * length(Yvec)),
+                        pred_low = qtiles.mat$X2.5., 
+                        pred_med = qtiles.mat$X50., 
+                        pred_high = qtiles.mat$X97.5.)
+  
+  
+  out.list <- list(pred.df = pred.df,
+                   coefs = coefs)
+  
+  return(out.list)
+}
+
 ```
 
 And load the data.
@@ -189,6 +340,33 @@ ggplot() +
 
 We should be able to have a model that is fitted to all transects but each transect having its slope and intercept (random slope and intercept). 
 
+Change transects and months
+
+```{r}
+ggplot() + 
+  geom_point(data = inund.2018,
+             aes(x = Dist_Berm,
+                 y = log(InundHeight_AbvLAT),
+                 color = Transect_f)) + 
+  #facet_grid(. ~ Transect_f) +
+  facet_wrap(~ Month, nrow = 3)
+
+```
+
+```{r}
+ggplot() + 
+  geom_point(data = inund.2019,
+             aes(x = Dist_Berm,
+                 y = log(InundHeight_AbvLAT),
+                 color = Transect_f)) + 
+  #facet_grid(. ~ Transect_f) +
+  facet_wrap(~ Month, nrow = 3)
+
+```
+
+Variability among transects is quite small in some cases, maybe except transect 2 in 2019.
+
+
 First, transform some variables:
 
 ```{r}
@@ -199,6 +377,193 @@ inund %>% mutate(Year2 = ifelse(Year == 2018, 1, 2),
 
 
 ```
+
+
+Fit the first model:
+```{r}
+
+jags.data <- list(y = inund$log_inund,
+                  month = inund$Month2,
+                  Dist_Berm = inund$Dist_Berm,
+                  year = inund$Year2,
+                  N = nrow(inund),
+                  n.months = length(unique(inund$Month2)),
+                  n.years = length(unique(inund$Year2)))
+
+MCMC.params <- list(n.samples = 10000,
+                    n.burnin = 5000,
+                    n.thin = 5,
+                    n.chains = 5)
+
+parameters <- c("b0", "b1", "b2", "sigma.y", "deviance")
+
+MCMC.params$model.file = "models/Model_linear_month_year.txt"
+
+#if (!file.exists("RData/linear_month_year.rds")){
+  jm.1 <- jags(data = jags.data,
+             #inits = inits,
+             parameters.to.save= parameters,
+             model.file = MCMC.params$model.file,
+             n.chains = MCMC.params$n.chains,
+             n.burnin = MCMC.params$n.burnin,
+             n.thin = MCMC.params$n.thin,
+             n.iter = MCMC.params$n.samples,
+             DIC = T, 
+             parallel=T)
+
+#   saveRDS(jm, file = "RData/linear_month_year.rds")  
+# } else {
+#   jm <- readRDS("RData/linear_month_year.rds")
+# }
+
+summary(jm.1)  
+
+# check some posteriors
+mcmc_trace(jm.1$samples, pars = c("b0[1]", "b0[2]", "b0[3]", "b0[4]"))
+mcmc_trace(jm.1$samples, pars = c("b1[1]", "b1[2]", "b1[3]", "b1[4]"))
+mcmc_trace(jm.1$samples, pars = c("b2[1]", "b2[2]"))
+```
+
+Extract the posterior samples and create plots
+```{r}
+pred.list <- extract.prediction(zm = jm.1, jags.data = jags.data)
+
+pred.list$pred.df %>% mutate(Month = ifelse(Month2 < 4, Month2 + 9, Month2 - 3)) -> pred.df
+
+pred.df %>% filter(Year == 2018) -> pred.df.2018
+ggplot() + 
+  geom_point(data = inund.2018,
+             aes(x = Dist_Berm,
+                 y = log(InundHeight_AbvLAT))) +
+  geom_path(data = pred.df.2018,
+            aes(x = Dist_Berm,
+                 y = (pred_med))) +
+  geom_ribbon(data = pred.df.2018,
+              aes(x = Dist_Berm,
+                  ymin = (pred_low),
+                  ymax = (pred_high)),
+              alpha = 0.5) +
+  facet_wrap(~ Month, nrow = 2)  
+
+```
+
+I think the second-order polynomial may fit better... Let's try...
+
+```{r}
+MCMC.params$model.file = "models/Model_linear_Poly2_month_year.txt"
+
+parameters <- c("b0", "b1", "b2", "b12", "sigma.y", "deviance")
+
+#if (!file.exists("RData/linear_Poly2_month_year.rds")){
+  jm.2 <- jags(data = jags.data,
+             #inits = inits,
+             parameters.to.save= parameters,
+             model.file = MCMC.params$model.file,
+             n.chains = MCMC.params$n.chains,
+             n.burnin = MCMC.params$n.burnin,
+             n.thin = MCMC.params$n.thin,
+             n.iter = MCMC.params$n.samples,
+             DIC = T, 
+             parallel=T)
+
+#   saveRDS(jm.2, file = "RData/linear_Poly2_month_year.rds")  
+# } else {
+#   jm.2 <- readRDS("RData/linear_Poly2_month_year.rds")
+# }
+
+summary(jm.2)  
+
+# check some posteriors
+mcmc_trace(jm.2$samples, pars = c("b0[1]", "b0[2]", "b0[3]", "b0[4]"))
+mcmc_trace(jm.2$samples, pars = c("b1[1]", "b1[2]", "b1[3]", "b1[4]",
+                                "b1[5]", "b1[6]", "b1[7]"))
+mcmc_trace(jm.2$samples, pars = c("b12[1]", "b12[2]", "b12[3]", "b12[4]",
+                                "b12[5]", "b12[6]", "b12[7]"))
+mcmc_trace(jm.2$samples, pars = c("b2[1]", "b2[2]"))
+```
+
+Extract the posterior samples and create plots
+```{r}
+pred.list <- extract.prediction(zm = jm.2, jags.data = jags.data)
+
+pred.list$pred.df %>% mutate(Month = ifelse(Month2 < 4, Month2 + 9, Month2 - 3)) -> pred.df
+
+pred.df %>% filter(Year == 2018) -> pred.df.2018
+ggplot() + 
+  geom_point(data = inund.2018,
+             aes(x = Dist_Berm,
+                 y = log(InundHeight_AbvLAT))) +
+  geom_path(data = pred.df.2018,
+            aes(x = Dist_Berm,
+                 y = (pred_med))) +
+  geom_ribbon(data = pred.df.2018,
+              aes(x = Dist_Berm,
+                  ymin = (pred_low),
+                  ymax = (pred_high)),
+              alpha = 0.5) +
+  facet_wrap(~ Month, nrow = 2)  
+
+```
+
+Of course... the 2nd order polynomial has to increase at the end, which is not good in this case. How about Gompertz? 
+
+```{r}
+MCMC.params$model.file = "models/Model_linear_Gompertz_month_year.txt"
+
+parameters <- c("b0", "b1", "b2", "sigma.y", "deviance")
+
+#if (!file.exists("RData/linear_Poly2_month_year.rds")){
+  jm.3 <- jags(data = jags.data,
+             #inits = inits,
+             parameters.to.save= parameters,
+             model.file = MCMC.params$model.file,
+             n.chains = MCMC.params$n.chains,
+             n.burnin = MCMC.params$n.burnin,
+             n.thin = MCMC.params$n.thin,
+             n.iter = MCMC.params$n.samples,
+             DIC = T, 
+             parallel=T)
+
+#   saveRDS(jm.2, file = "RData/linear_Poly2_month_year.rds")  
+# } else {
+#   jm.2 <- readRDS("RData/linear_Poly2_month_year.rds")
+# }
+
+summary(jm.3)  
+
+# check some posteriors
+mcmc_trace(jm.3$samples, pars = c("b0[1,1]", "b0[2,1]", "b0[3,1]", "b0[4,1]"))
+mcmc_trace(jm.3$samples, pars = c("b1[1,2]", "b1[2,2]", "b1[3,2]", "b1[4,2]",
+                                  "b1[5,2]", "b1[6,2]", "b1[7,2]"))
+mcmc_trace(jm.3$samples, pars = c("b2"))
+
+```
+
+Predict:
+
+```{r}
+# need a newe function to extract appropriate posteriors.
+pred.list <- extract.prediction.Gompertz(zm = jm.3, jags.data = jags.data)
+
+pred.list$pred.df %>% mutate(Month = ifelse(Month2 < 4, Month2 + 9, Month2 - 3)) -> pred.df
+
+pred.df %>% filter(Year == 2018) -> pred.df.2018
+ggplot() + 
+  geom_point(data = inund.2018,
+             aes(x = Dist_Berm,
+                 y = log(InundHeight_AbvLAT))) +
+  geom_path(data = pred.df.2018,
+            aes(x = Dist_Berm,
+                 y = (pred_med))) +
+  # geom_ribbon(data = pred.df.2018,
+  #             aes(x = Dist_Berm,
+  #                 ymin = (pred_low),
+  #                 ymax = (pred_high)),
+  #             alpha = 0.5) +
+  facet_wrap(~ Month, nrow = 2)  
+
+```
+
 
 The small sample size makes it difficult to fit complicated models. Separating by months will not work with just a couple data points in some cases. So, I'm going to include all months. Then, extract just Dec - March. In the next two figures, data from Oct, Nov, and April are in orange. Will eliminating those will affect regression equations? 
 
@@ -246,14 +611,15 @@ For 2019, including those three months will provide regression for transect 2. N
 
 
 ```{r}
-library(jagsUI)
-library(bayesplot)
+
 
 jags.data <- list(y = inund$log_inund,
                   transect = inund$Transect2,
                   Dist_Berm = inund$Dist_Berm,
                   year = inund$Year2,
-                  N = nrow(inund))
+                  N = nrow(inund),
+                  n.years = length(unique(inund$Year2)),
+                  n.transects = length(unique(inund$Transect2)))
 
 MCMC.params <- list(n.samples = 10000,
                     n.burnin = 5000,
@@ -295,54 +661,8 @@ mcmc_trace(jm$samples, pars = c("b2[1]", "b2[2]"))
 Do predictions.
 
 ```{r}
-extract.samples <- function(varname, zm){
-  dev <- unlist(lapply(zm, FUN = function(x) x[, varname]))
-  return(dev)
-}
 
-b0 <- b1 <- vector(mode = "list", length = 4)
-for (k in 1:4){
-  b0[[k]] <- extract.samples(paste0("b0[", k, "]"), jm$samples)
-  b1[[k]] <- extract.samples(paste0("b1[", k, "]"), jm$samples)
-}
 
-b2 <- vector(mode = "list", length = 2)
-for (k in 1:2){
-  b2[[k]] <- extract.samples(paste0("b2[", k, "]"), jm$samples)
-}
-
-Dvec <- seq(0, 80, by = 1)  # min and max of Distance from Berm
-Yvec <- c(1, 2)
-
-pred.Y <- vector(mode = "list", length = 8)
-k <- y <- c <- 1
-for (k in 1:4){      # transects
-  for (y in 1:2){    # years
-    pred.Y[[c]] <- b0[[k]] + b1[[k]] %*% t(Dvec) + b2[[y]] * Yvec[y]
-    #pred.Y.med[[c]] <- jm$q50$b0[k] + jm$q50$b1[k] %*% t(Dvec) + jm$q50$b2[y] * Yvec[y]
-    #pred.Y.high[[c]] <- jm$q97.5$b0[k] + jm$q97.5$b1[k] %*% t(Dvec) + jm$q97.5$b2[y] * Yvec[y]
-    c <- c + 1
-  }
-  
-}
-
-# get quantiles
-
-qtiles <- lapply(pred.Y, 
-                 FUN = function(x) apply(x, MARGIN = 2, 
-                                         FUN = quantile, c(0.025, 0.5, 0.975)))
-
-qtiles.mat <- data.frame(do.call(rbind, lapply(qtiles, FUN = t)))
-
-year.vec <- rep(rep(c(1,2), each = length(Dvec)), 4)
-transect.vec <- rep(c(1,2, 3, 4), each = length(Dvec) * length(Yvec))
-
-pred.df <- data.frame(Transect_f = as.factor(transect.vec + 1), 
-                       Year = year.vec + 2017, 
-                       Dist_Berm = rep(Dvec, 4 * length(Yvec)),
-                       pred_low = qtiles.mat$X2.5., 
-                       pred_med = qtiles.mat$X50., 
-                       pred_high = qtiles.mat$X97.5.)
 
 pred.df %>% filter(Year == 2018) -> pred.df.2018
 ggplot() + 
