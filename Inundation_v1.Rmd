@@ -365,19 +365,19 @@ mcmc_trace(jm.1$samples, pars = c("b2[1]", "b2[2]"))
 
 Extract the posterior samples and create plots
 ```{r}
-pred.list <- extract.prediction(zm = jm.1, jags.data = jags.data)
+pred.list.jm.1 <- extract.prediction(zm = jm.1, jags.data = jags.data)
 
-pred.list$pred.df %>% mutate(Month = ifelse(Month2 < 4, Month2 + 9, Month2 - 3)) -> pred.df
+pred.list.jm.1$pred.df %>% mutate(Month = ifelse(Month2 < 4, Month2 + 9, Month2 - 3)) -> pred.df.jm.1
 
-pred.df %>% filter(Year == 2018) -> pred.df.2018
+pred.df.jm.1 %>% filter(Year == 2018) -> pred.df.jm.1.2018
 ggplot() + 
   geom_point(data = inund.2018,
              aes(x = Dist_Berm,
                  y = log(InundHeight_AbvLAT))) +
-  geom_path(data = pred.df.2018,
+  geom_path(data = pred.df.jm.1.2018,
             aes(x = Dist_Berm,
                  y = (pred_med))) +
-  geom_ribbon(data = pred.df.2018,
+  geom_ribbon(data = pred.df.jm.1.2018,
               aes(x = Dist_Berm,
                   ymin = (pred_low),
                   ymax = (pred_high)),
@@ -388,15 +388,15 @@ ggplot() +
 
 ```{r}
 
-pred.df %>% filter(Year == 2019) -> pred.df.2019
+pred.df.jm.1 %>% filter(Year == 2019) -> pred.df.jm.1.2019
 ggplot() + 
   geom_point(data = inund.2019,
              aes(x = Dist_Berm,
                  y = log(InundHeight_AbvLAT))) +
-  geom_path(data = pred.df.2019,
+  geom_path(data = pred.df.jm.1.2019,
             aes(x = Dist_Berm,
                  y = (pred_med))) +
-  geom_ribbon(data = pred.df.2019,
+  geom_ribbon(data = pred.df.jm.1.2019,
               aes(x = Dist_Berm,
                   ymin = (pred_low),
                   ymax = (pred_high)),
@@ -442,19 +442,19 @@ mcmc_trace(jm.2$samples, pars = c("b2[1]", "b2[2]"))
 
 Extract the posterior samples and create plots
 ```{r}
-pred.list <- extract.prediction(zm = jm.2, jags.data = jags.data)
+pred.list.jm.2 <- extract.prediction(zm = jm.2, jags.data = jags.data)
 
-pred.list$pred.df %>% mutate(Month = ifelse(Month2 < 4, Month2 + 9, Month2 - 3)) -> pred.df
+pred.list.jm.2$pred.df %>% mutate(Month = ifelse(Month2 < 4, Month2 + 9, Month2 - 3)) -> pred.df.jm.2
 
-pred.df %>% filter(Year == 2018) -> pred.df.2018
+pred.df.jm.2 %>% filter(Year == 2018) -> pred.df.jm.2.2018
 ggplot() + 
   geom_point(data = inund.2018,
              aes(x = Dist_Berm,
                  y = log(InundHeight_AbvLAT))) +
-  geom_path(data = pred.df.2018,
+  geom_path(data = pred.df.jm.2.2018,
             aes(x = Dist_Berm,
                  y = (pred_med))) +
-  geom_ribbon(data = pred.df.2018,
+  geom_ribbon(data = pred.df.jm.2.2018,
               aes(x = Dist_Berm,
                   ymin = (pred_low),
                   ymax = (pred_high)),
@@ -467,15 +467,15 @@ Of course... the 2nd order polynomial has to increase at the end, which is not g
 
 
 ```{r}
-pred.df %>% filter(Year == 2019) -> pred.df.2019
+pred.df.jm.2 %>% filter(Year == 2019) -> pred.df.jm.2.2019
 ggplot() + 
   geom_point(data = inund.2019,
              aes(x = Dist_Berm,
                  y = log(InundHeight_AbvLAT))) +
-  geom_path(data = pred.df.2019,
+  geom_path(data = pred.df.jm.2.2019,
             aes(x = Dist_Berm,
                  y = (pred_med))) +
-  geom_ribbon(data = pred.df.2019,
+  geom_ribbon(data = pred.df.jm.2.2019,
               aes(x = Dist_Berm,
                   ymin = (pred_low),
                   ymax = (pred_high)),
