@@ -386,6 +386,25 @@ ggplot() +
 
 ```
 
+```{r}
+
+pred.df %>% filter(Year == 2019) -> pred.df.2019
+ggplot() + 
+  geom_point(data = inund.2019,
+             aes(x = Dist_Berm,
+                 y = log(InundHeight_AbvLAT))) +
+  geom_path(data = pred.df.2019,
+            aes(x = Dist_Berm,
+                 y = (pred_med))) +
+  geom_ribbon(data = pred.df.2019,
+              aes(x = Dist_Berm,
+                  ymin = (pred_low),
+                  ymax = (pred_high)),
+              alpha = 0.5) +
+  facet_wrap(~ Month, nrow = 2)  
+
+```
+
 I think the second-order polynomial may fit better... Let's try...
 
 ```{r}
@@ -446,4 +465,22 @@ ggplot() +
 
 Of course... the 2nd order polynomial has to increase at the end, which is not good in this case. 
 
+
+```{r}
+pred.df %>% filter(Year == 2019) -> pred.df.2019
+ggplot() + 
+  geom_point(data = inund.2019,
+             aes(x = Dist_Berm,
+                 y = log(InundHeight_AbvLAT))) +
+  geom_path(data = pred.df.2019,
+            aes(x = Dist_Berm,
+                 y = (pred_med))) +
+  geom_ribbon(data = pred.df.2019,
+              aes(x = Dist_Berm,
+                  ymin = (pred_low),
+                  ymax = (pred_high)),
+              alpha = 0.5) +
+  facet_wrap(~ Month, nrow = 2)  
+
+```
 
