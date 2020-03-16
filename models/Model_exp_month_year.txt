@@ -1,0 +1,22 @@
+# JAGS model to fit a linear model to water height vs. distance from berm
+# exponential decay function: y is in the log scale
+
+model{
+	for (i in 1:N){
+		mu.y[i] <- b0[month[i], year[i]] * exp(-b1[month[i], year[i]] * Dist_Berm[i])
+		y[i] ~ dnorm(mu.y[i], tau.y)  
+	}
+	
+	sigma.y <- sqrt(1/tau.y)
+
+	tau.y ~ dgamma(0.1, 0.01)
+
+	for (k in 1:n.months){		
+		for (k1 in 1:n.years){
+			b1[k, k1] ~ dnorm(0, 0.01)I(0,)
+			b0[k, k1] ~ dnorm(0, 0.01)		
+		}
+
+	}
+
+}

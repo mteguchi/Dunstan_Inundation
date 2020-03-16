@@ -123,6 +123,64 @@ extract.prediction <- function(zm, jags.data){
   return(out.list)
 }
 
+# extract posteriors
+extract.prediction.2 <- function(zm, jags.data){
+  length.b <- jags.data$n.months * jags.data$n.years
+  length.year <- jags.data$n.years
+  
+  #b2 <- extract.samples("b2", zm$samples)
+  
+  Dvec <- seq(1, 80, by = 1)  # min and max of Distance from Berm
+  Yvec <- seq(1, length.year)
+  
+  # this term is constant over months and years
+  #term.3 <- exp(- b2 %*% t(Dvec))  # tried Gompertz but not useful
+  
+  b0 <- b1 <- pred.Y <- vector(mode = "list", length = length.b)
+  k <- k1 <- c <- 1
+  for (k1 in 1:length.year){
+    for (k in 1:jags.data$n.months){
+      b0[[c]] <- extract.samples(paste0("b0[", k, ",", k1, "]"), zm$samples)
+      b1[[c]] <- extract.samples(paste0("b1[", k, ",", k1, "]"), zm$samples)
+      #pred.Y[[c]] <- b0[[c]] - b1[[c]] * term.3
+      pred.Y[[c]] <- b0[[1]] * exp(-b1[[c]] %*% t(Dvec))
+ 
+      c <- c + 1
+    }
+  }
+  
+  # collect all posterior
+  #coefs <- c(b0, b1, b2)
+  coefs <- c(b0, b1)
+  
+  # get quantiles
+  qtiles <- lapply(pred.Y, 
+                   FUN = function(x) apply(x, MARGIN = 2, 
+                                           FUN = quantile, c(0.025, 0.5, 0.975)))
+  
+  qtiles.mat <- data.frame(do.call(rbind, lapply(qtiles, FUN = t)))
+  
+  year.vec <- rep(seq(1, length.year), 
+                  each = length(Dvec) * jags.data$n.months)
+  
+  month.vec <- rep(rep(seq(1, jags.data$n.months), 
+                       each = length(Dvec)),
+                   length.year)
+  
+  pred.df <- data.frame(Month2 = month.vec, 
+                        Year = year.vec + 2017, 
+                        Dist_Berm = rep(Dvec, length.b * length(Yvec)),
+                        pred_low = qtiles.mat$X2.5., 
+                        pred_med = qtiles.mat$X50., 
+                        pred_high = qtiles.mat$X97.5.)
+  
+  
+  out.list <- list(pred.df = pred.df,
+                   coefs = coefs)
+  
+  return(out.list)
+}
+
 ```
 
 And load the data.
@@ -446,4 +504,197 @@ ggplot() +
 
 Of course... the 2nd order polynomial has to increase at the end, which is not good in this case. 
 
+
+```{r}
+MCMC.params$model.file = "models/Model_exp_month_year.txt"
+
+parameters <- c("b0", "b1", "sigma.y", "deviance")
+
+#if (!file.exists("RData/exp_month_year_2.rds")){
+  jm.3 <- jags(data = jags.data,
+             #inits = inits,
+             parameters.to.save= parameters,
+             model.file = MCMC.params$model.file,
+             n.chains = MCMC.params$n.chains,
+             n.burnin = MCMC.params$n.burnin,
+             n.thin = MCMC.params$n.thin,
+             n.iter = MCMC.params$n.samples,
+             DIC = T, 
+             parallel=T)
+
+#   saveRDS(jm.2, file = "RData/exp_month_year_2.rds")  
+# } else {
+#   jm.2 <- readRDS("RData/exp_month_year_2.rds")
+# }
+
+summary(jm.3)  
+
+# check some posteriors
+mcmc_trace(jm.3$samples, pars = c("b0[1,1]", "b0[2,1]", "b0[3,1]", "b0[4,1]"))
+mcmc_trace(jm.3$samples, pars = c("b1[1,2]", "b1[2,2]", "b1[3,2]", "b1[4,2]",
+                                  "b1[5,2]", "b1[6,2]", "b1[7,2]"))
+
+```
+
+Predict:
+
+```{r}
+# need a newe function to extract appropriate posteriors.
+pred.list <- extract.prediction.2(zm = jm.3, jags.data = jags.data)
+
+pred.list$pred.df %>% mutate(Month = ifelse(Month2 < 4, Month2 + 9, Month2 - 3)) -> pred.df
+
+pred.df %>% filter(Year == 2018) -> pred.df.2018
+ggplot() + 
+  geom_point(data = inund.2018,
+             aes(x = Dist_Berm,
+                 y = log(InundHeight_AbvLAT))) +
+  geom_path(data = pred.df.2018,
+            aes(x = Dist_Berm,
+                 y = (pred_med))) +
+  geom_ribbon(data = pred.df.2018,
+              aes(x = Dist_Berm,
+                  ymin = (pred_low),
+                  ymax = (pred_high)),
+              alpha = 0.5) +
+  facet_wrap(~ Month, nrow = 2)  
+
+```
+
+
+The small sample size makes it difficult to fit complicated models. Separating by months will not work with just a couple data points in some cases. So, I'm going to include all months. Then, extract just Dec - March. In the next two figures, data from Oct, Nov, and April are in orange. Will eliminating those will affect regression equations? 
+
+```{r}
+inund.2018 %>% filter(Month > 11 | Month < 4) -> inund.2018.1
+inund.2018 %>% filter(Month < 12 & Month > 3) -> inund.2018.2
+
+ggplot() + 
+  geom_point(data = inund.2018.1,
+             aes(x = Dist_Berm,
+                 y = log(InundHeight_AbvLAT))) +
+  geom_point(data = inund.2018.2,
+             aes(x = Dist_Berm,
+                 y = log(InundHeight_AbvLAT)),
+             color = "orange") +
+  facet_wrap(~ Transect_f, nrow = 2)  
+  #geom_smooth(method = "loess", size = 1.5)    # this doesn't work - too small sample size
+
+# ggsave(filename = "figures/InundHeight_2018.png",
+#        device = "png", dpi = 600)
+```
+
+For 2018, including those three months will affect transects 2 and 3 a little (lower intercepts and slope) but probably not much for transects 4 and 5. 
+
+```{r}
+inund.2019 %>% filter(Month > 11 | Month < 4) -> inund.2019.1
+inund.2019 %>% filter(Month < 12 & Month > 3) -> inund.2019.2
+
+ggplot() + 
+  geom_point(data = inund.2019.1,
+             aes(x = Dist_Berm,
+                 y = log(InundHeight_AbvLAT))) +
+  geom_point(data = inund.2019.2,
+             aes(x = Dist_Berm,
+                 y = log(InundHeight_AbvLAT)),
+             color = "orange") +
+  facet_wrap(~ Transect_f, nrow = 2)  
+  #geom_smooth(method = "loess", size = 1.5)    # this doesn't work - too small sample size
+
+# ggsave(filename = "figures/InundHeight_2018.png",
+#        device = "png", dpi = 600)
+```
+
+For 2019, including those three months will provide regression for transect 2. No data were available for transect 2 in Dec through March. Just looking at these plots, I don't think slopes or intercepts will change significantly just by having these data points. Leaving them in will give us a few more data points, which are useful when the entire dataset is so small. 
+
+
+```{r}
+
+
+jags.data <- list(y = inund$log_inund,
+                  transect = inund$Transect2,
+                  Dist_Berm = inund$Dist_Berm,
+                  year = inund$Year2,
+                  N = nrow(inund),
+                  n.years = length(unique(inund$Year2)),
+                  n.transects = length(unique(inund$Transect2)))
+
+MCMC.params <- list(n.samples = 10000,
+                    n.burnin = 5000,
+                    n.thin = 5,
+                    n.chains = 5)
+
+parameters <- c("b0", "b1", "b2", "sigma.y", "deviance")
+
+MCMC.params$model.file = "models/Model_linear_all.txt"
+
+#if (!file.exists("RData/linear_all.rds")){
+  jm <- jags(data = jags.data,
+             #inits = inits,
+             parameters.to.save= parameters,
+             model.file = MCMC.params$model.file,
+             n.chains = MCMC.params$n.chains,
+             n.burnin = MCMC.params$n.burnin,
+             n.thin = MCMC.params$n.thin,
+             n.iter = MCMC.params$n.samples,
+             DIC = T, 
+             parallel=T)
+
+#   saveRDS(jm, file = "RData/linear_all.rds")  
+# } else {
+#   jm <- readRDS("RData/linear_all.rds")
+# }
+
+summary(jm)  
+
+# check some posteriors
+mcmc_trace(jm$samples, pars = c("b0[1]", "b0[2]", "b0[3]", "b0[4]"))
+mcmc_trace(jm$samples, pars = c("b1[1]", "b1[2]", "b1[3]", "b1[4]"))
+mcmc_trace(jm$samples, pars = c("b2[1]", "b2[2]"))
+
+# they all look good.
+
+```
+
+Do predictions.
+
+```{r}
+
+
+
+pred.df %>% filter(Year == 2018) -> pred.df.2018
+ggplot() + 
+  geom_point(data = inund.2018,
+             aes(x = Dist_Berm,
+                 y = InundHeight_AbvLAT)) +
+  geom_path(data = pred.df.2018,
+            aes(x = Dist_Berm,
+                 y = exp(pred_med))) +
+  geom_ribbon(data = pred.df,
+              aes(x = Dist_Berm,
+                  ymin = exp(pred_low),
+                  ymax = exp(pred_high)),
+              alpha = 0.5) +
+  facet_wrap(~ Transect_f, nrow = 2)  
+
+```
+
+Not sure why bands are jagged... they should be smooth...
+
+```{r}
+pred.df %>% filter(Year == 2019) -> pred.df.2019
+ggplot() + 
+  geom_point(data = inund.2019,
+             aes(x = Dist_Berm,
+                 y = InundHeight_AbvLAT)) +
+  geom_path(data = pred.df.2019,
+            aes(x = Dist_Berm,
+                 y = exp(pred_med))) +
+  geom_ribbon(data = pred.df,
+              aes(x = Dist_Berm,
+                  ymin = exp(pred_low),
+                  ymax = exp(pred_high)),
+              alpha = 0.5) +
+  facet_wrap(~ Transect_f, nrow = 2)  
+
+```
 
