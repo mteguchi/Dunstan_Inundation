@@ -123,6 +123,81 @@ extract.prediction <- function(zm, jags.data){
   return(out.list)
 }
 
+
+extract.prediction.poly3 <- function(zm, jags.data){
+  length.b <- jags.data$n.months
+  
+  b0 <- b1 <- b12 <- b13 <- vector(mode = "list", length = length.b)
+  k <- 1
+  for (k in 1:length.b){
+    b0[[k]] <- extract.samples(paste0("b0[", k, "]"), zm$samples)
+    b1[[k]] <- extract.samples(paste0("b1[", k, "]"), zm$samples)
+    b12[[k]] <- extract.samples(paste0("b12[", k, "]"), zm$samples)
+    b13[[k]] <- extract.samples(paste0("b13[", k, "]"), zm$samples)
+  }
+  
+  length.year <- jags.data$n.years
+  
+  b2 <- vector(mode = "list", length = length.year)
+  for (k in 1:length.year){
+    b2[[k]] <- extract.samples(paste0("b2[", k, "]"), zm$samples)
+  }
+  
+  Dvec <- seq(0, 80, by = 1)  # min and max of Distance from Berm
+  Yvec <- seq(1, length.year)
+  
+  pred.Y <- vector(mode = "list", length = (length.year * length.b))
+  k <- y <- c <- 1
+  for (k in 1:length.b){      # transects/months
+    for (y in 1:length.year){    # years
+      pred.Y[[c]] <- b0[[k]] + 
+        b1[[k]] %*% t(Dvec) + 
+        b12[[k]] %*% t(Dvec^2) + 
+        b13[[k]] %*% t(Dvec^3) + b2[[y]] * Yvec[y]
+      
+      c <- c + 1
+    }
+    
+  }
+  
+  coefs <- c(b0, b1, b12, b13, b2)
+  # get quantiles
+  
+  qtiles <- lapply(pred.Y, 
+                   FUN = function(x) apply(x, MARGIN = 2, 
+                                           FUN = quantile, c(0.025, 0.5, 0.975)))
+  
+  qtiles.mat <- data.frame(do.call(rbind, lapply(qtiles, FUN = t)))
+  
+  year.vec <- rep(rep(seq(1, length.year), 
+                      each = length(Dvec)), 
+                  length.b)
+  
+  b.vec <- rep(seq(1, length.b), each = length(Dvec) * length(Yvec))
+
+  if (length(grep("n.transects", names(jags.data))) > 0){
+    pred.df <- data.frame(Transect_f = as.factor(b.vec + 1), 
+                          Year = year.vec + 2017, 
+                          Dist_Berm = rep(Dvec, length.b * length(Yvec)),
+                          pred_low = qtiles.mat$X2.5., 
+                          pred_med = qtiles.mat$X50., 
+                          pred_high = qtiles.mat$X97.5.)
+  } else if (length(grep("n.months", names(jags.data))) > 0){
+    pred.df <- data.frame(Month2 = b.vec, 
+                          Year = year.vec + 2017, 
+                          Dist_Berm = rep(Dvec, length.b * length(Yvec)),
+                          pred_low = qtiles.mat$X2.5., 
+                          pred_med = qtiles.mat$X50., 
+                          pred_high = qtiles.mat$X97.5.)
+
+  }
+
+  out.list <- list(pred.df = pred.df,
+                   coefs = coefs)
+  
+  return(out.list)
+}
+
 # extract posteriors
 extract.prediction.2 <- function(zm, jags.data){
   length.b <- jags.data$n.months * jags.data$n.years
@@ -504,13 +579,13 @@ ggplot() +
 
 Of course... the 2nd order polynomial has to increase at the end, which is not good in this case. 
 
-
+3-rd order? 
 ```{r}
-MCMC.params$model.file = "models/Model_exp_month_year.txt"
+MCMC.params$model.file = "models/Model_Poly3_month_year.txt"
 
-parameters <- c("b0", "b1", "sigma.y", "deviance")
+parameters <- c("b0", "b1", "b2", "b12", "b13", "sigma.y", "deviance")
 
-#if (!file.exists("RData/exp_month_year_2.rds")){
+#if (!file.exists("RData/linear_Poly3_month_year.rds")){
   jm.3 <- jags(data = jags.data,
              #inits = inits,
              parameters.to.save= parameters,
@@ -522,17 +597,19 @@ parameters <- c("b0", "b1", "sigma.y", "deviance")
              DIC = T, 
              parallel=T)
 
-#   saveRDS(jm.2, file = "RData/exp_month_year_2.rds")  
+#   saveRDS(jm.2, file = "RData/linear_Poly3_month_year.rds")  
 # } else {
-#   jm.2 <- readRDS("RData/exp_month_year_2.rds")
+#   jm.2 <- readRDS("RData/linear_Poly3_month_year.rds")
 # }
 
 summary(jm.3)  
 
 # check some posteriors
-mcmc_trace(jm.3$samples, pars = c("b0[1,1]", "b0[2,1]", "b0[3,1]", "b0[4,1]"))
-mcmc_trace(jm.3$samples, pars = c("b1[1,2]", "b1[2,2]", "b1[3,2]", "b1[4,2]",
-                                  "b1[5,2]", "b1[6,2]", "b1[7,2]"))
+mcmc_trace(jm.3$samples, pars = c("b0[1]", "b0[2]", "b0[3]", "b0[4]"))
+mcmc_trace(jm.3$samples, pars = c("b1[1]", "b1[2]", "b1[3]", "b1[4]",
+                                "b1[5]", "b1[6]", "b1[7]"))
+mcmc_trace(jm.3$samples, pars = c("b12[1]", "b12[2]", "b12[3]", "b12[4]",
+                                "b12[5]", "b12[6]", "b12[7]"))
 
 ```
 
@@ -540,7 +617,7 @@ Predict:
 
 ```{r}
 # need a newe function to extract appropriate posteriors.
-pred.list <- extract.prediction.2(zm = jm.3, jags.data = jags.data)
+pred.list <- extract.prediction.poly3(zm = jm.3, jags.data = jags.data)
 
 pred.list$pred.df %>% mutate(Month = ifelse(Month2 < 4, Month2 + 9, Month2 - 3)) -> pred.df
 
