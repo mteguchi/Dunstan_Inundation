@@ -3,8 +3,13 @@
 
 model{
 	for (i in 1:N){
-		mu.y[i] <- b0[month[i]] + b1[month[i]] * Dist_Berm[i] + b12[month[i]] * Dist_Berm[i] * Dist_Berm[i] + b13[month[i]] * Dist_Berm[i] * Dist_Berm[i] * Dist_Berm[i] + b2[year[i]] * year[i]
+		mu.y[i] <- b0[month[i]] + b1[month[i]] * Dist_Berm[i] + b12[month[i]] * Dist_Berm[i] * Dist_Berm[i] + b13[month[i]] * Dist_Berm[i] * Dist_Berm[i] * Dist_Berm[i] + b2 * year[i]
 		y[i] ~ dnorm(mu.y[i], tau.y)  
+
+		res[i] <- y[i] - mu.y[i]    # residual
+		sim.y[i] ~ dnorm(mu.y[i], tau.y)
+		res.sim[i] <- sim.y[i] - mu.y[i]
+
 	}
 	
 	sigma.y <- sqrt(1/tau.y)
@@ -18,8 +23,9 @@ model{
 		b13[k] ~ dnorm(0, 0.01)
 	}
 
-	for (k in 1:n.years){
-		b2[k] ~ dnorm(0, 0.01)
-	}
+	b2 ~ dnorm(0, 0.01)
 
+  	#Derived parameters
+  	fit <- sum(res[])
+  	fit.new <- sum(res.sim[])
 }

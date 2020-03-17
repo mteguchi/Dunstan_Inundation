@@ -321,9 +321,12 @@ ggplot() +
 
 Even at the log scale, some don't look linear (e.g., transect 5 (crosses)). Take a look at them more closely.  First, split them into two years.
 
+Remove transect 2 as per discussion on 2020-03-16 (US Westcoast time).
+
 ```{r}
 inund %>% mutate(Year = ifelse(Date < as.Date("2018-05-01"), 2018, 2019)) %>%
   mutate(Month = month(Date)) %>%
+  filter(Transect != 2) %>%
   mutate(Transect_f = as.factor(Transect)) -> inund
 
 inund.2018 <- filter(inund, Year == 2018)
@@ -498,19 +501,19 @@ mcmc_trace(jm.1$samples, pars = c("b2[1]", "b2[2]"))
 
 Extract the posterior samples and create plots
 ```{r}
-pred.list <- extract.prediction(zm = jm.1, jags.data = jags.data)
+pred.list.jm.1 <- extract.prediction(zm = jm.1, jags.data = jags.data)
 
-pred.list$pred.df %>% mutate(Month = ifelse(Month2 < 4, Month2 + 9, Month2 - 3)) -> pred.df
+pred.list.jm.1$pred.df %>% mutate(Month = ifelse(Month2 < 4, Month2 + 9, Month2 - 3)) -> pred.df.jm.1
 
-pred.df %>% filter(Year == 2018) -> pred.df.2018
+pred.df.jm.1 %>% filter(Year == 2018) -> pred.df.jm.1.2018
 ggplot() + 
   geom_point(data = inund.2018,
              aes(x = Dist_Berm,
                  y = log(InundHeight_AbvLAT))) +
-  geom_path(data = pred.df.2018,
+  geom_path(data = pred.df.jm.1.2018,
             aes(x = Dist_Berm,
                  y = (pred_med))) +
-  geom_ribbon(data = pred.df.2018,
+  geom_ribbon(data = pred.df.jm.1.2018,
               aes(x = Dist_Berm,
                   ymin = (pred_low),
                   ymax = (pred_high)),
@@ -518,6 +521,25 @@ ggplot() +
   facet_wrap(~ Month, nrow = 2)  
 
 ```
+
+And for 2019.
+```{r}
+pred.df.jm.1 %>% filter(Year == 2019) -> pred.df.jm.1.2019
+ggplot() + 
+  geom_point(data = inund.2019,
+             aes(x = Dist_Berm,
+                 y = log(InundHeight_AbvLAT))) +
+  geom_path(data = pred.df.jm.1.2019,
+            aes(x = Dist_Berm,
+                 y = (pred_med))) +
+  geom_ribbon(data = pred.df.jm.1.2019,
+              aes(x = Dist_Berm,
+                  ymin = (pred_low),
+                  ymax = (pred_high)),
+              alpha = 0.5) +
+  facet_wrap(~ Month, nrow = 2)  
+```
+
 
 I think the second-order polynomial may fit better... Let's try...
 
