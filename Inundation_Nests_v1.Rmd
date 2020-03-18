@@ -1,0 +1,162 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+In this Notebook, I use the second-order polynomial function fitted to the inundation data in Inundation_v2.Rmd to evaluate probabilities of inundation for nests. 
+
+
+Load essential libraries first.
+
+```{r}
+rm(list=ls())
+library(ggplot2)
+library(tidyverse)
+library(readr)
+library(lubridate)
+library(jagsUI)
+library(bayesplot)
+
+source("Dunstan_Inundation_fcns.R")
+```
+
+And load the data.
+
+```{r}
+
+inund.cols <- cols(
+   Transect = col_double(),
+   Post = col_double(),
+   InundHeight_AbvLAT = col_double(),
+   Dist_Berm = col_double(),
+   Berm_elevation = col_double(),
+   BermSurvey_Month = col_character(),
+   Inund_Month = col_character(),
+   Date = col_date(format = "%d/%m/%Y"),
+   Time = col_time(format = "%H:%M:%S %p"))
+
+inund <- read_csv("data/inundationRaine.csv", col_types = inund.cols)
+min.Dist <- min(inund$Dist_Berm)
+sd.Dist <- sqrt(var(inund$Dist_Berm))
+
+inund %>% mutate(Year = ifelse(Date < as.Date("2018-05-01"), 2018, 2019)) %>%
+  mutate(Month = month(Date)) %>%
+  filter(Transect != 2) %>%
+  mutate(Transect_f = as.factor(Transect),
+         Year2 = ifelse(Year == 2018, 1, 2),
+         Month2 = ifelse(Month > 9, Month - 9, Month + 3),
+         Month_f = factor(Month, levels = c("10", "11", "12", "1", "2", "3", "4")),
+         Transect2 = Transect - 1,
+         log_inund = log(InundHeight_AbvLAT),
+         scaled_Dist_Berm = (Dist_Berm - min.Dist)/sd.Dist) -> inund
+
+inund.2018 <- filter(inund, Year == 2018)
+inund.2019 <- filter(inund, Year == 2019)
+
+#View(inund)
+# these files need months...
+nestmap.cols <- cols(
+     Nest_ID = col_double(),
+     Nest_Easting = col_double(),
+     Nest_Northing = col_double(),
+     Nest_Elevation = col_double(),
+     BermDist_m = col_double())
+
+Nest_18Map <- read_csv("data/2018Nest_mapping.csv", col_types = nestmap.cols)
+
+Nest_18Map %>% mutate(Year = 2018) -> Nest_18Map
+# #View(Nest_18Map)
+# 
+nest18.cols <- cols(
+   Nest_ID = col_double(),
+   Nest_Easting = col_double(),
+   Nest_Northing = col_double(),
+   Nest_Elevation = col_double(),
+   BermDist_m = col_double(),
+   inundated = col_character())
+Nest_18INUND <- read_csv("data/2018Nest_INUND.csv", col_types = nest18.cols)
+
+
+```
+
+
+
+Second order polynomial with month-specific intercept and coefficients for the distance plus year effect:
+
+mu.y[i] <- b0[month[i]] + b1[month[i]] * Dist_Berm[i] + b12[month[i]] * Dist_Berm[i] * Dist_Berm[i] + b2 * year[i]
+
+y[i] ~ dnorm(mu.y[i], tau.y)  
+
+
+```{r}
+jags.data <- list(y = inund$log_inund,
+                  month = inund$Month2,
+                  Dist_Berm = inund$scaled_Dist_Berm,
+                  year = inund$Year2,
+                  N = nrow(inund),
+                  n.months = length(unique(inund$Month2)),
+                  n.years = length(unique(inund$Year2)))
+
+MCMC.params <- list(n.samples = 10000,
+                    n.burnin = 5000,
+                    n.thin = 5,
+                    n.chains = 5,
+                    model.file = "models/Model_Poly2_month_year.txt")
+
+parameters <- c("b0", "b1", "b2", "b12", "sigma.y",
+                 "fit", "fit.new", "deviance")
+
+if (!file.exists("RData/Poly2_month_year.rds")){
+  jm.2 <- jags(data = jags.data,
+               #inits = inits,
+               parameters.to.save= parameters,
+               model.file = MCMC.params$model.file,
+               n.chains = MCMC.params$n.chains,
+               n.burnin = MCMC.params$n.burnin,
+               n.thin = MCMC.params$n.thin,
+               n.iter = MCMC.params$n.samples,
+               DIC = T, 
+               parallel=T)
+  
+  saveRDS(jm.2, file = "RData/Poly2_month_year.rds")  
+} else {
+  jm.2 <- readRDS("RData/Poly2_month_year.rds")
+}
+
+```
+
+
+Extract the posterior samples and create plots
+```{r}
+pred.list.jm.2 <- extract.prediction.poly2(zm = jm.2, 
+                                           jags.data = jags.data)
+
+pred.list.jm.2$pred.df %>% 
+  mutate(Month = ifelse(Month2 < 4, Month2 + 9, Month2 - 3),
+         Month_f = factor(Month, 
+                          levels = c("10", "11", "12", "1", "2", "3", "4"))) -> pred.df.jm.2
+
+pred.df.jm.2 %>% filter(Year == 2018) -> pred.df.jm.2.2018
+ggplot() + 
+  geom_point(data = inund,
+             aes(x = scaled_Dist_Berm,
+                 y = log(InundHeight_AbvLAT))) +
+  geom_path(data = pred.df.jm.2,
+            aes(x = Dist_Berm,
+                 y = (pred_med))) +
+  geom_ribbon(data = pred.df.jm.2,
+              aes(x = Dist_Berm,
+                  ymin = (pred_low),
+                  ymax = (pred_high)),
+              alpha = 0.5) +
+  facet_grid(Year ~ Month_f)  
+
+```
+
+Now we add nest locations on top of these plots.
+
+```{r}
+Nest_18Map
+
+```
+

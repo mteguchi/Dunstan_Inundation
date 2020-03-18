@@ -114,6 +114,7 @@ inund %>% mutate(Year = ifelse(Date < as.Date("2018-05-01"), 2018, 2019)) %>%
   mutate(Transect_f = as.factor(Transect),
          Year2 = ifelse(Year == 2018, 1, 2),
          Month2 = ifelse(Month > 9, Month - 9, Month + 3),
+         Month_f = factor(Month, levels = c("10", "11", "12", "1", "2", "3", "4")),
          Transect2 = Transect - 1,
          log_inund = log(InundHeight_AbvLAT),
          scaled_Dist_Berm = (Dist_Berm - min.Dist)/sd.Dist) -> inund
@@ -130,7 +131,7 @@ ggplot() +
   geom_point(data = inund.2018,
              aes(x = Dist_Berm,
                  y = log(InundHeight_AbvLAT),
-                 color = as.factor(Month),
+                 color = Month_f,
                  shape = Transect_f))
 ```
 
@@ -140,7 +141,7 @@ ggplot() +
   geom_point(data = inund.2019,
              aes(x = Dist_Berm,
                  y = log(InundHeight_AbvLAT),
-                 color = as.factor(Month),
+                 color = Month_f,
                  shape = as.factor(Transect)))
 ```
 
@@ -151,7 +152,7 @@ ggplot() +
   geom_point(data = inund.2018,
              aes(x = Dist_Berm,
                  y = log(InundHeight_AbvLAT),
-                 color = as.factor(Month))) +
+                 color = Month_f)) +
   facet_wrap(~ Transect_f, nrow = 2)  
   #geom_smooth(method = "loess", size = 1.5)    # this doesn't work - too small sample size
 
@@ -164,7 +165,7 @@ ggplot() +
   geom_point(data = inund.2019,
              aes(x = Dist_Berm,
                  y = log(InundHeight_AbvLAT),
-                 color = as.factor(Month))) +
+                 color = Month_f)) +
   #facet_grid(. ~ Transect_f) +
   facet_wrap(~ Transect_f, nrow = 2)
 
@@ -182,7 +183,7 @@ ggplot() +
                  color = Transect_f,
                  shape = as.factor(Year))) + 
   #facet_grid(. ~ Transect_f) +
-  facet_wrap(~ Month, nrow = 3)
+  facet_wrap(~ Month_f, nrow = 3)
 
 ```
 
@@ -194,7 +195,7 @@ ggplot() +
                  y = log(InundHeight_AbvLAT),
                  color = Transect_f)) + 
   #facet_grid(. ~ Transect_f) +
-  facet_wrap(~ Month, nrow = 3)
+  facet_wrap(~ Month_f, nrow = 3)
 
 ```
 
@@ -205,7 +206,7 @@ ggplot() +
                  y = log(InundHeight_AbvLAT),
                  color = Transect_f)) + 
   #facet_grid(. ~ Transect_f) +
-  facet_wrap(~ Month, nrow = 3)
+  facet_wrap(~ Month_f, nrow = 3)
 
 ```
 
@@ -225,6 +226,7 @@ The response variable (InundHeight_AbvLAT) is log transformed.
 The first model is a simple linear model; 
 
 mu.y[i] <- b0[month[i]] + b1[month[i]] * Dist_Berm[i] + b2 * year[i]
+
 y[i] ~ dnorm(mu.y[i], tau.y)  
 
 ```{r}
@@ -252,22 +254,22 @@ parameters <- c("b0", "b1", "b2", "sigma.y",
 
 MCMC.params$model.file = "models/Model_linear_month_year.txt"
 
-#if (!file.exists("RData/linear_month_year.rds")){
+if (!file.exists("RData/linear_month_year.rds")){
   jm.1 <- jags(data = jags.data.exp,
-             #inits = inits,
-             parameters.to.save= parameters,
-             model.file = MCMC.params$model.file,
-             n.chains = MCMC.params$n.chains,
-             n.burnin = MCMC.params$n.burnin,
-             n.thin = MCMC.params$n.thin,
-             n.iter = MCMC.params$n.samples,
-             DIC = T, 
-             parallel=T)
-
-#   saveRDS(jm, file = "RData/linear_month_year.rds")  
-# } else {
-#   jm <- readRDS("RData/linear_month_year.rds")
-# }
+               #inits = inits,
+               parameters.to.save= parameters,
+               model.file = MCMC.params$model.file,
+               n.chains = MCMC.params$n.chains,
+               n.burnin = MCMC.params$n.burnin,
+               n.thin = MCMC.params$n.thin,
+               n.iter = MCMC.params$n.samples,
+               DIC = T, 
+               parallel=T)
+  
+  saveRDS(jm.1, file = "RData/linear_month_year.rds")  
+} else {
+  jm.1 <- readRDS("RData/linear_month_year.rds")
+}
 
 summary(jm.1)  
 ```
@@ -313,22 +315,22 @@ parameters <- c("b0", "b1", "b2", "sigma.y",
 
 MCMC.params$model.file = "models/Model_linear_month_year_OneB0.txt"
 
-#if (!file.exists("RData/linear_month_year.rds")){
+if (!file.exists("RData/linear_month_year_OneB0.rds")){
   jm.1.1 <- jags(data = jags.data.exp,
-             #inits = inits,
-             parameters.to.save= parameters,
-             model.file = MCMC.params$model.file,
-             n.chains = MCMC.params$n.chains,
-             n.burnin = MCMC.params$n.burnin,
-             n.thin = MCMC.params$n.thin,
-             n.iter = MCMC.params$n.samples,
-             DIC = T, 
-             parallel=T)
-
-#   saveRDS(jm, file = "RData/linear_month_year.rds")  
-# } else {
-#   jm <- readRDS("RData/linear_month_year.rds")
-# }
+                 #inits = inits,
+                 parameters.to.save= parameters,
+                 model.file = MCMC.params$model.file,
+                 n.chains = MCMC.params$n.chains,
+                 n.burnin = MCMC.params$n.burnin,
+                 n.thin = MCMC.params$n.thin,
+                 n.iter = MCMC.params$n.samples,
+                 DIC = T, 
+                 parallel=T)
+  
+  saveRDS(jm.1.1, file = "RData/linear_month_year_OneB0.rds")  
+} else {
+  jm.1.1 <- readRDS("RData/linear_month_year.rds")
+}
 
 summary(jm.1.1)  
 
@@ -341,42 +343,28 @@ Extract the posterior samples and create plots. The extraction function is in Du
 ```{r}
 pred.list.jm.1 <- extract.prediction.1(zm = jm.1, jags.data = jags.data.exp)
 
-pred.list.jm.1$pred.df %>% mutate(Month = ifelse(Month2 < 4, Month2 + 9, Month2 - 3)) -> pred.df.jm.1
+pred.list.jm.1$pred.df %>% 
+  mutate(Month = ifelse(Month2 < 4, Month2 + 9, Month2 - 3),
+         Month_f = factor(Month, 
+                          levels = c("10", "11", "12", "1", "2", "3", "4"))) -> pred.df.jm.1
 
 pred.df.jm.1 %>% filter(Year == 2018) -> pred.df.jm.1.2018
 ggplot() + 
-  geom_point(data = inund.2018,
+  geom_point(data = inund,
              aes(x = scaled_Dist_Berm,
                  y = log(InundHeight_AbvLAT))) +
-  geom_path(data = pred.df.jm.1.2018,
+  geom_path(data = pred.df.jm.1,
             aes(x = Dist_Berm,
                  y = (pred_med))) +
-  geom_ribbon(data = pred.df.jm.1.2018,
+  geom_ribbon(data = pred.df.jm.1,
               aes(x = Dist_Berm,
                   ymin = (pred_low),
                   ymax = (pred_high)),
               alpha = 0.5) +
-  facet_wrap(~ Month, nrow = 2)  
+  facet_grid(Year ~ Month_f)  
 
 ```
 
-And for 2019.
-```{r}
-pred.df.jm.1 %>% filter(Year == 2019) -> pred.df.jm.1.2019
-ggplot() + 
-  geom_point(data = inund.2019,
-             aes(x = scaled_Dist_Berm,
-                 y = log(InundHeight_AbvLAT))) +
-  geom_path(data = pred.df.jm.1.2019,
-            aes(x = Dist_Berm,
-                 y = (pred_med))) +
-  geom_ribbon(data = pred.df.jm.1.2019,
-              aes(x = Dist_Berm,
-                  ymin = (pred_low),
-                  ymax = (pred_high)),
-              alpha = 0.5) +
-  facet_wrap(~ Month, nrow = 2)  
-```
 
 Residuals look not great - non-linearity is evident. 
 
@@ -384,6 +372,7 @@ Residuals look not great - non-linearity is evident.
 Second order polynomial with month-specific intercept and coefficients for the distance plus year effect:
 
 mu.y[i] <- b0[month[i]] + b1[month[i]] * Dist_Berm[i] + b12[month[i]] * Dist_Berm[i] * Dist_Berm[i] + b2 * year[i]
+
 y[i] ~ dnorm(mu.y[i], tau.y)  
 
 
@@ -393,22 +382,22 @@ MCMC.params$model.file = "models/Model_Poly2_month_year.txt"
 parameters <- c("b0", "b1", "b2", "b12", "sigma.y",
                  "fit", "fit.new", "deviance")
 
-#if (!file.exists("RData/linear_Poly2_month_year.rds")){
+if (!file.exists("RData/Poly2_month_year.rds")){
   jm.2 <- jags(data = jags.data.exp,
-             #inits = inits,
-             parameters.to.save= parameters,
-             model.file = MCMC.params$model.file,
-             n.chains = MCMC.params$n.chains,
-             n.burnin = MCMC.params$n.burnin,
-             n.thin = MCMC.params$n.thin,
-             n.iter = MCMC.params$n.samples,
-             DIC = T, 
-             parallel=T)
-
-#   saveRDS(jm.2, file = "RData/linear_Poly2_month_year.rds")  
-# } else {
-#   jm.2 <- readRDS("RData/linear_Poly2_month_year.rds")
-# }
+               #inits = inits,
+               parameters.to.save= parameters,
+               model.file = MCMC.params$model.file,
+               n.chains = MCMC.params$n.chains,
+               n.burnin = MCMC.params$n.burnin,
+               n.thin = MCMC.params$n.thin,
+               n.iter = MCMC.params$n.samples,
+               DIC = T, 
+               parallel=T)
+  
+  saveRDS(jm.2, file = "RData/Poly2_month_year.rds")  
+} else {
+  jm.2 <- readRDS("RData/Poly2_month_year.rds")
+}
 
 summary(jm.2)  
 ```
@@ -447,50 +436,35 @@ Extract the posterior samples and create plots
 ```{r}
 pred.list.jm.2 <- extract.prediction.poly2(zm = jm.2, jags.data = jags.data.exp)
 
-pred.list.jm.2$pred.df %>% mutate(Month = ifelse(Month2 < 4, Month2 + 9, Month2 - 3)) -> pred.df.jm.2
+pred.list.jm.2$pred.df %>% 
+  mutate(Month = ifelse(Month2 < 4, Month2 + 9, Month2 - 3),
+         Month_f = factor(Month, 
+                          levels = c("10", "11", "12", "1", "2", "3", "4"))) -> pred.df.jm.2
 
 pred.df.jm.2 %>% filter(Year == 2018) -> pred.df.jm.2.2018
 ggplot() + 
-  geom_point(data = inund.2018,
+  geom_point(data = inund,
              aes(x = scaled_Dist_Berm,
                  y = log(InundHeight_AbvLAT))) +
-  geom_path(data = pred.df.jm.2.2018,
+  geom_path(data = pred.df.jm.2,
             aes(x = Dist_Berm,
                  y = (pred_med))) +
-  geom_ribbon(data = pred.df.jm.2.2018,
+  geom_ribbon(data = pred.df.jm.2,
               aes(x = Dist_Berm,
                   ymin = (pred_low),
                   ymax = (pred_high)),
               alpha = 0.5) +
-  facet_wrap(~ Month, nrow = 2)  
+  facet_grid(Year ~ Month_f)  
 
 ```
 
-And 2019:
-```{r}
-pred.df.jm.2 %>% filter(Year == 2019) -> pred.df.jm.2.2019
-ggplot() + 
-  geom_point(data = inund.2019,
-             aes(x = scaled_Dist_Berm,
-                 y = log(InundHeight_AbvLAT))) +
-  geom_path(data = pred.df.jm.2.2019,
-            aes(x = Dist_Berm,
-                 y = (pred_med))) +
-  geom_ribbon(data = pred.df.jm.2.2019,
-              aes(x = Dist_Berm,
-                  ymin = (pred_low),
-                  ymax = (pred_high)),
-              alpha = 0.5) +
-  facet_wrap(~ Month, nrow = 2)  
-
-```
 
 It looks okay but ...Of course... the 2nd order polynomial has to increase at the end, which may not be a good feather in this case. 
-
 
 3-rd order polynomial (why not?) 
 
 mu.y[i] <- b0[month[i]] + b1[month[i]] * Dist_Berm[i] + b12[month[i]] * Dist_Berm[i] * Dist_Berm[i] + b13[month[i]] * Dist_Berm[i] * Dist_Berm[i] * Dist_Berm[i] + b2 * year[i]
+
 y[i] ~ dnorm(mu.y[i], tau.y)  
 
 ```{r}
@@ -499,22 +473,22 @@ MCMC.params$model.file = "models/Model_Poly3_month_year.txt"
 parameters <- c("b0", "b1", "b2", "b12", "b13", 
                  "fit", "fit.new","sigma.y", "deviance")
 
-#if (!file.exists("RData/linear_Poly3_month_year.rds")){
+if (!file.exists("RData/Poly3_month_year.rds")){
   jm.3 <- jags(data = jags.data.exp,
-             #inits = inits,
-             parameters.to.save= parameters,
-             model.file = MCMC.params$model.file,
-             n.chains = MCMC.params$n.chains,
-             n.burnin = MCMC.params$n.burnin,
-             n.thin = MCMC.params$n.thin,
-             n.iter = MCMC.params$n.samples,
-             DIC = T, 
-             parallel=T)
-
-#   saveRDS(jm.2, file = "RData/linear_Poly3_month_year.rds")  
-# } else {
-#   jm.2 <- readRDS("RData/linear_Poly3_month_year.rds")
-# }
+               #inits = inits,
+               parameters.to.save= parameters,
+               model.file = MCMC.params$model.file,
+               n.chains = MCMC.params$n.chains,
+               n.burnin = MCMC.params$n.burnin,
+               n.thin = MCMC.params$n.thin,
+               n.iter = MCMC.params$n.samples,
+               DIC = T, 
+               parallel=T)
+  
+  saveRDS(jm.3, file = "RData/Poly3_month_year.rds")  
+} else {
+  jm.3 <- readRDS("RData/Poly3_month_year.rds")
+}
 
 summary(jm.3)  
 ```
@@ -560,58 +534,44 @@ Predict:
 pred.list.jm.3 <- extract.prediction.poly3(zm = jm.3, jags.data = jags.data.exp)
 
 pred.list.jm.3$pred.df %>% 
-  mutate(Month = ifelse(Month2 < 4, Month2 + 9, Month2 - 3)) -> pred.df.jm.3
+  mutate(Month = ifelse(Month2 < 4, Month2 + 9, Month2 - 3),
+         Month_f = factor(Month, 
+                          levels = c("10", "11", "12", "1", "2", "3", "4"))) -> pred.df.jm.3
 
 pred.df.jm.3 %>% filter(Year == 2018) -> pred.df.jm.3.2018
 ggplot() + 
-  geom_point(data = inund.2018,
+  geom_point(data = inund,
              aes(x = scaled_Dist_Berm,
                  y = log(InundHeight_AbvLAT))) +
-  geom_path(data = pred.df.jm.3.2018,
+  geom_path(data = pred.df.jm.3,
             aes(x = Dist_Berm,
                  y = (pred_med))) +
-  geom_ribbon(data = pred.df.jm.3.2018,
+  geom_ribbon(data = pred.df.jm.3,
               aes(x = Dist_Berm,
                   ymin = (pred_low),
                   ymax = (pred_high)),
               alpha = 0.5) +
-  facet_wrap(~ Month, nrow = 2)  
+  facet_grid(Year ~ Month_f)  
 
 ```
 
 It doesn't look like this does any better than the second order polynomial. 
 
-```{r}
-
-pred.df.jm.3 %>% filter(Year == 2019) -> pred.df.jm.3.2019
-ggplot() + 
-  geom_point(data = inund.2019,
-             aes(x = scaled_Dist_Berm,
-                 y = log(InundHeight_AbvLAT))) +
-  geom_path(data = pred.df.jm.3.2019,
-            aes(x = Dist_Berm,
-                 y = (pred_med))) +
-  geom_ribbon(data = pred.df.jm.3.2019,
-              aes(x = Dist_Berm,
-                  ymin = (pred_low),
-                  ymax = (pred_high)),
-              alpha = 0.5) +
-  facet_wrap(~ Month, nrow = 2)  
-```
-
 
 The exponential decay function.
 
 Because this function cannot have a year effect as in the polynomial case, I made the two coefficients month and year specific. 
+
 mu.y[i] <- b0[month[i], year[i]] * exp(-b1[month[i], year[i]] * Dist_Berm[i])
-		y[i] ~ dnorm(mu.y[i], tau.y)  
+
+y[i] ~ dnorm(mu.y[i], tau.y)  
 
 ```{r}
 MCMC.params$model.file = "models/Model_exp_month_year.txt"
 
 parameters <- c("b0", "b1", "sigma.y", "fit", "fit.new", "deviance")
 
-#if (!file.exists("RData/exp_month_year.rds")){
+if (!file.exists("RData/exp_month_year.rds")){
   jm.4 <- jags(data = jags.data.exp,
                #inits = inits,
                parameters.to.save= parameters,
@@ -623,10 +583,10 @@ parameters <- c("b0", "b1", "sigma.y", "fit", "fit.new", "deviance")
                DIC = T, 
                parallel=T)
 
-#   saveRDS(jm.4, file = "RData/exp_month_year.rds")  
-# } else {
-#   jm.4 <- readRDS("RData/exp_month_year.rds")
-# }
+  saveRDS(jm.4, file = "RData/exp_month_year.rds")  
+} else {
+  jm.4 <- readRDS("RData/exp_month_year.rds")
+}
 
 summary(jm.4)  
 ```
@@ -661,51 +621,35 @@ Some are pushed against zero...
 pred.list.jm.4 <- extract.prediction.exp(zm = jm.4, 
                                          jags.data = jags.data.exp)
 
-pred.list.jm.4$pred.df %>% mutate(Month = ifelse(Month2 < 4, Month2 + 9, Month2 - 3)) -> pred.df.jm.4
+pred.list.jm.4$pred.df %>% 
+  mutate(Month = ifelse(Month2 < 4, Month2 + 9, Month2 - 3),
+         Month_f = factor(Month, 
+                          levels = c("10", "11", "12", "1", "2", "3", "4"))) -> pred.df.jm.4
 
 pred.df.jm.4 %>% filter(Year == 2018) -> pred.df.jm.4.2018
 
 
 ggplot() + 
-  geom_point(data = inund.2018,
+  geom_point(data = inund,
              aes(x = scaled_Dist_Berm,
                  y = log(InundHeight_AbvLAT))) +
-  geom_path(data = pred.df.jm.4.2018,
+  geom_path(data = pred.df.jm.4,
             aes(x = Dist_Berm,
                  y = (pred_med))) +
-  geom_ribbon(data = pred.df.jm.4.2018,
+  geom_ribbon(data = pred.df.jm.4,
               aes(x = Dist_Berm,
                   ymin = (pred_low),
                   ymax = (pred_high)),
               alpha = 0.5) +
-  facet_wrap(~ Month, nrow = 2)  
+  facet_grid(Year ~ Month_f)  
 
 ```
 
-And for 2019:
-
-```{r}
-pred.df.jm.4 %>% filter(Year == 2019) -> pred.df.jm.4.2019
-
-ggplot() + 
-  geom_point(data = inund.2019,
-             aes(x = scaled_Dist_Berm,
-                 y = log(InundHeight_AbvLAT))) +
-  geom_path(data = pred.df.jm.4.2019,
-            aes(x = Dist_Berm,
-                 y = (pred_med))) +
-  geom_ribbon(data = pred.df.jm.4.2019,
-              aes(x = Dist_Berm,
-                  ymin = (pred_low),
-                  ymax = (pred_high)),
-              alpha = 0.5) +
-  facet_wrap(~ Month, nrow = 2)  
-  
-```
 
 To simplify the exponential decay model, I made the "intercept" and distance coefficients month-specific and added a year effect:
 
 mu.y[i] <- b0[month[i]] * exp(b1[month[i]] * Dist_Berm[i] + b2 * year[i])
+
 y[i] ~ dnorm(mu.y[i], tau.y)  
 
 
@@ -714,7 +658,7 @@ MCMC.params$model.file = "models/Model_exp_month_year_1.txt"
 
 parameters <- c("b0", "b1", "b2", "sigma.y", "fit", "fit.new", "deviance")
 
-#if (!file.exists("RData/exp_month_year.rds")){
+if (!file.exists("RData/exp_month_year_1.rds")){
   jm.5 <- jags(data = jags.data.exp,
                #inits = inits,
                parameters.to.save= parameters,
@@ -725,11 +669,11 @@ parameters <- c("b0", "b1", "b2", "sigma.y", "fit", "fit.new", "deviance")
                n.iter = MCMC.params$n.samples,
                DIC = T, 
                parallel=T)
-
-#   saveRDS(jm.4, file = "RData/exp_month_year.rds")  
-# } else {
-#   jm.4 <- readRDS("RData/exp_month_year.rds")
-# }
+  
+  saveRDS(jm.5, file = "RData/exp_month_year_1.rds")  
+} else {
+  jm.5 <- readRDS("RData/exp_month_year_1.rds")
+}
 
 summary(jm.5)  
 ```
@@ -756,47 +700,30 @@ mcmc_dens(jm.5$samples, pars = "b2")
 pred.list.jm.5 <- extract.prediction.exp2(zm = jm.5, 
                                          jags.data = jags.data.exp)
 
-pred.list.jm.5$pred.df %>% mutate(Month = ifelse(Month2 < 4, Month2 + 9, Month2 - 3)) -> pred.df.jm.5
+pred.list.jm.5$pred.df %>% 
+  mutate(Month = ifelse(Month2 < 4, Month2 + 9, Month2 - 3),
+         Month_f = factor(Month, 
+                          levels = c("10", "11", "12", "1", "2", "3", "4"))) -> pred.df.jm.5
 
 pred.df.jm.5 %>% filter(Year == 2018) -> pred.df.jm.5.2018
 
 
 ggplot() + 
-  geom_point(data = inund.2018,
+  geom_point(data = inund,
              aes(x = scaled_Dist_Berm,
                  y = log(InundHeight_AbvLAT))) +
-  geom_path(data = pred.df.jm.5.2018,
+  geom_path(data = pred.df.jm.5,
             aes(x = Dist_Berm,
                  y = (pred_med))) +
-  geom_ribbon(data = pred.df.jm.5.2018,
+  geom_ribbon(data = pred.df.jm.5,
               aes(x = Dist_Berm,
                   ymin = (pred_low),
                   ymax = (pred_high)),
               alpha = 0.5) +
-  facet_wrap(~ Month, nrow = 2)  
+  facet_grid(Year ~ Month_f)  
 
 ```
 
-And for 2019:
-
-```{r}
-pred.df.jm.5 %>% filter(Year == 2019) -> pred.df.jm.5.2019
-
-ggplot() + 
-  geom_point(data = inund.2019,
-             aes(x = scaled_Dist_Berm,
-                 y = log(InundHeight_AbvLAT))) +
-  geom_path(data = pred.df.jm.5.2019,
-            aes(x = Dist_Berm,
-                 y = (pred_med))) +
-  geom_ribbon(data = pred.df.jm.5.2019,
-              aes(x = Dist_Berm,
-                  ymin = (pred_low),
-                  ymax = (pred_high)),
-              alpha = 0.5) +
-  facet_wrap(~ Month, nrow = 2)  
-  
-```
 
 DIC is best for jm.2 (2nd order polynomial).   
 ```{r}
