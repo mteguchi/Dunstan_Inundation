@@ -54,31 +54,44 @@ inund.2018 <- filter(inund, Year == 2018)
 inund.2019 <- filter(inund, Year == 2019)
 
 #View(inund)
-# these files need months...
-nestmap.cols <- cols(
-     Nest_ID = col_double(),
-     Nest_Easting = col_double(),
-     Nest_Northing = col_double(),
-     Nest_Elevation = col_double(),
-     BermDist_m = col_double())
+# Replaced Feb-18 with 15/02/2018 (TE, 2020-03-19)
+# Replaced Dec-18 with 15/12/2018 (TE, 2020-03-19)
+# Replaced Feb-20 with 15/02/2020 (TE, 2020-03-19)
 
-Nest_18Map <- read_csv("data/2018Nest_mapping.csv", col_types = nestmap.cols)
+nest.cols <- cols(fid = col_integer(), 
+                  Nest_UID = col_character(), 
+                  Northings = col_double(), 
+                  Eastings = col_double(), 
+                  Nest_Elevation = col_double(),
+                  Berm_Dist = col_double(),
+                  Date_laid = col_date(format = "%d/%m/%Y"),
+                  Date_dug = col_date(format = "%d/%m/%Y"),
+                  Sector = col_character(),
+                  Habitat = col_character(),
+                  Hatched = col_integer(),
+                  Live_hatchlings = col_integer(),
+                  Dead_hatchlings = col_integer(),
+                  Phase_1 = col_integer(),
+                  Phase_2 = col_integer(),
+                  Phase_3 = col_integer(),
+                  Phase_4 = col_integer(),
+                  Phase_5 = col_integer(),
+                  Phase_6 = col_integer(),
+                  Decomposed = col_integer(),
+                  Total_unhatched = col_integer(),
+                  Total_clutch = col_integer(),
+                  rate_success = col_double())
 
-Nest_18Map %>% mutate(Year = 2018) -> Nest_18Map
-# #View(Nest_18Map)
-# 
-nest18.cols <- cols(
-   Nest_ID = col_double(),
-   Nest_Easting = col_double(),
-   Nest_Northing = col_double(),
-   Nest_Elevation = col_double(),
-   BermDist_m = col_double(),
-   inundated = col_character())
-Nest_18INUND <- read_csv("data/2018Nest_INUND.csv", col_types = nest18.cols)
+nest.data <- read_csv("data/hatchsuccess_inund_TE.csv", 
+                      col_types = nest.cols)
 
+nest.data %>% mutate(Year = ifelse(Date_laid < as.Date("2018-05-01"), 2018, 2019)) %>%
+  mutate(Month = month(Date_laid),
+         Month2 = ifelse(Month > 9, Month - 9, Month + 3),
+         Month_f = factor(Month, levels = c("10", "11", "12", "1", "2", "3", "4")),
+         scaled_Dist_Berm = (Berm_Dist - min.Dist)/sd.Dist) -> nest.data
 
 ```
-
 
 
 Second order polynomial with month-specific intercept and coefficients for the distance plus year effect:
@@ -136,7 +149,6 @@ pred.list.jm.2$pred.df %>%
          Month_f = factor(Month, 
                           levels = c("10", "11", "12", "1", "2", "3", "4"))) -> pred.df.jm.2
 
-pred.df.jm.2 %>% filter(Year == 2018) -> pred.df.jm.2.2018
 ggplot() + 
   geom_point(data = inund,
              aes(x = scaled_Dist_Berm,
@@ -149,14 +161,21 @@ ggplot() +
                   ymin = (pred_low),
                   ymax = (pred_high)),
               alpha = 0.5) +
+   geom_point(data = nest.data,
+              aes(x = scaled_Dist_Berm,
+                  y = log(Nest_Elevation),
+                  color = rate_success)) +
   facet_grid(Year ~ Month_f)  
+
+ggsave(filename = "figures/poly2_success.png", 
+       dpi = 600, device = "png")
 
 ```
 
 Now we add nest locations on top of these plots.
 
 ```{r}
-Nest_18Map
+
 
 ```
 
