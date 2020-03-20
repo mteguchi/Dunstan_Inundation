@@ -147,12 +147,19 @@ pred.list.jm.2 <- extract.prediction.poly2(zm = jm.2,
 pred.list.jm.2$pred.df %>% 
   mutate(Month = ifelse(Month2 < 4, Month2 + 9, Month2 - 3),
          Month_f = factor(Month, 
-                          levels = c("10", "11", "12", "1", "2", "3", "4"))) -> pred.df.jm.2
+                          levels = c("10", "11", "12", 
+                                     "1", "2", "3", "4"))) -> pred.df.jm.2
 
 ggplot() + 
+   geom_point(data = nest.data,
+              aes(x = scaled_Dist_Berm,
+                  y = log(Nest_Elevation),
+                  color = rate_success),
+              alpha = 0.5) +
   geom_point(data = inund,
              aes(x = scaled_Dist_Berm,
-                 y = log(InundHeight_AbvLAT))) +
+                 y = log(InundHeight_AbvLAT)),
+             color = "red") +
   geom_path(data = pred.df.jm.2,
             aes(x = Dist_Berm,
                  y = (pred_med))) +
@@ -161,21 +168,175 @@ ggplot() +
                   ymin = (pred_low),
                   ymax = (pred_high)),
               alpha = 0.5) +
-   geom_point(data = nest.data,
-              aes(x = scaled_Dist_Berm,
-                  y = log(Nest_Elevation),
-                  color = rate_success)) +
-  facet_grid(Year ~ Month_f)  
+  facet_grid(Year ~ Month_f) + 
+  labs(title = "Date laid")
 
-ggsave(filename = "figures/poly2_success.png", 
-       dpi = 600, device = "png")
+ggsave(filename = "figures/poly2_success.png",
+       dpi = 600, device = "png",
+       height = 3.53, width = 5.73)
 
 ```
 
-Now we add nest locations on top of these plots.
+Shifting time of nests by some number of days
+```{r}
+nest.data %>% mutate(laid_15d = Date_laid + 15,
+                     laid_30d = Date_laid + 30,
+                     laid_45d = Date_laid + 45,
+                     laid_60d = Date_laid + 60,
+                     Month_15d = month(laid_15d),
+                     Month_30d = month(laid_30d),
+                     Month_45d = month(laid_45d),
+                     Month_60d = month(laid_60d),
+                     Month_15d_f = factor(Month_15d, 
+                                          levels = c("10", "11", "12", 
+                                                     "1", "2", "3", "4")),
+                     Month_30d_f = factor(Month_30d, 
+                                          levels = c("10", "11", "12", 
+                                                     "1", "2", "3", "4")),
+                     Month_45d_f = factor(Month_45d, 
+                                          levels = c("10", "11", "12", 
+                                                     "1", "2", "3", "4")),
+                     Month_60d_f = factor(Month_60d, 
+                                          levels = c("10", "11", "12", 
+                                                     "1", "2", "3", "4"))) -> nest.data
+
+nest.data %>% select(scaled_Dist_Berm, 
+                     Nest_Elevation, 
+                     rate_success, 
+                     Month_15d_f, 
+                     Year) %>%
+  mutate(Month_f = Month_15d_f) -> nest.data.15d
+
+ggplot() + 
+   geom_point(data = nest.data.15d,
+              aes(x = scaled_Dist_Berm,
+                  y = log(Nest_Elevation),
+                  color = rate_success),
+              alpha = 0.5) +
+  geom_point(data = inund,
+             aes(x = scaled_Dist_Berm,
+                 y = log(InundHeight_AbvLAT)),
+             color = "red") +
+  geom_path(data = pred.df.jm.2,
+            aes(x = Dist_Berm,
+                 y = (pred_med))) +
+  geom_ribbon(data = pred.df.jm.2,
+              aes(x = Dist_Berm,
+                  ymin = (pred_low),
+                  ymax = (pred_high)),
+              alpha = 0.5) +
+  facet_grid(Year ~ Month_f) + 
+  labs(title = "Date laid + 15 days")
+
+ggsave(filename = "figures/poly2_success_15d.png",
+       dpi = 600, device = "png",
+       height = 3.53, width = 5.73)
+
+```
 
 ```{r}
+nest.data %>% select(scaled_Dist_Berm, 
+                     Nest_Elevation, 
+                     rate_success, 
+                     Month_30d_f,
+                     Year) %>%
+  mutate(Month_f = Month_30d_f) -> nest.data.30d
 
+ggplot() + 
+   geom_point(data = nest.data.30d,
+              aes(x = scaled_Dist_Berm,
+                  y = log(Nest_Elevation),
+                  color = rate_success),
+              alpha = 0.5) +
+  geom_point(data = inund,
+             aes(x = scaled_Dist_Berm,
+                 y = log(InundHeight_AbvLAT)),
+             color = "red") +
+  geom_path(data = pred.df.jm.2,
+            aes(x = Dist_Berm,
+                 y = (pred_med))) +
+  geom_ribbon(data = pred.df.jm.2,
+              aes(x = Dist_Berm,
+                  ymin = (pred_low),
+                  ymax = (pred_high)),
+              alpha = 0.5) +
+  facet_grid(Year ~ Month_f) + 
+  labs(title = "Date laid + 30 days")
+
+ggsave(filename = "figures/poly2_success_30d.png",
+       dpi = 600, device = "png",
+       height = 3.53, width = 5.73)
+
+```
+
+```{r}
+nest.data %>% select(scaled_Dist_Berm, 
+                     Nest_Elevation, 
+                     rate_success, 
+                     Month_45d_f,
+                     Year) %>%
+  mutate(Month_f = Month_45d_f) -> nest.data.45d
+
+ggplot() + 
+   geom_point(data = nest.data.45d,
+              aes(x = scaled_Dist_Berm,
+                  y = log(Nest_Elevation),
+                  color = rate_success),
+              alpha = 0.5) +
+  geom_point(data = inund,
+             aes(x = scaled_Dist_Berm,
+                 y = log(InundHeight_AbvLAT)),
+             color = "red") +
+  geom_path(data = pred.df.jm.2,
+            aes(x = Dist_Berm,
+                 y = (pred_med))) +
+  geom_ribbon(data = pred.df.jm.2,
+              aes(x = Dist_Berm,
+                  ymin = (pred_low),
+                  ymax = (pred_high)),
+              alpha = 0.5) +
+  facet_grid(Year ~ Month_f) + 
+  labs(title = "Date laid + 45 days")
+
+ggsave(filename = "figures/poly2_success_45d.png",
+       dpi = 600, device = "png",
+       height = 3.53, width = 5.73)
+
+```
+
+
+```{r}
+nest.data %>% select(scaled_Dist_Berm, 
+                     Nest_Elevation, 
+                     rate_success, 
+                     Month_60d_f,
+                     Year) %>%
+  mutate(Month_f = Month_60d_f) -> nest.data.60d
+
+ggplot() + 
+   geom_point(data = nest.data.60d,
+              aes(x = scaled_Dist_Berm,
+                  y = log(Nest_Elevation),
+                  color = rate_success),
+              alpha = 0.5) +
+  geom_point(data = inund,
+             aes(x = scaled_Dist_Berm,
+                 y = log(InundHeight_AbvLAT)),
+             color = "red") +
+  geom_path(data = pred.df.jm.2,
+            aes(x = Dist_Berm,
+                 y = (pred_med))) +
+  geom_ribbon(data = pred.df.jm.2,
+              aes(x = Dist_Berm,
+                  ymin = (pred_low),
+                  ymax = (pred_high)),
+              alpha = 0.5) +
+  facet_grid(Year ~ Month_f) + 
+  labs(title = "Date laid + 60 days")
+
+ggsave(filename = "figures/poly2_success_60d.png",
+       dpi = 600, device = "png",
+       height = 3.53, width = 5.73)
 
 ```
 
