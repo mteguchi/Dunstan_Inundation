@@ -149,7 +149,69 @@ extract.prediction.poly3 <- function(zm, jags.data){
   return(out.list)
 }
 
-# extract posteriors
+# poly2 prediction for any distance/yr/month combo
+# new.data should have three variables: Month, Year, and scaled_Dist_Berm
+# Month should be transformed into nesting month, where October is 1 and 
+# April is 7. Year should be transformed so that 2018 is 1 and 2019 is 2.
+predict.poly2 <- function(zm, new.data){
+  b2 <- extract.samples("b2", zm$samples)
+  pred.Y <- vector(mode = "list", length = nrow(new.data))
+  k <- 1
+  for (k in 1:nrow(new.data)){
+    b0 <- extract.samples(paste0("b0[", new.data$Month[k], "]"), zm$samples)
+    b1 <- extract.samples(paste0("b1[", new.data$Month[k], "]"), zm$samples)
+    b12 <- extract.samples(paste0("b12[", new.data$Month[k], "]"), zm$samples)
+    pred.Y[[k]] <- b0 + b1 * new.data$scaled_Dist_Berm[k] + 
+      b12 * (new.data$scaled_Dist_Berm[k])^2 + b2 * new.data$Year[k]
+    
+  }
+
+  # get quantiles
+  qtiles <- lapply(pred.Y, 
+                   FUN = quantile, c(0.025, 0.5, 0.975),
+                   na.rm = T)
+  
+  qtiles.df <- data.frame(do.call(rbind, lapply(qtiles, FUN = t)))
+  
+  out.list <- list(pred.Y = pred.Y,
+                   qtiles = qtiles.df)
+  return(out.list)
+  
+}
+
+# poly2.1 prediction for any distance/yr/month combo
+# new.data should have three variables: Month, Year, and scaled_Dist_Berm
+# Month should be transformed into nesting month, where October is 1 and 
+# April is 7. Year should be transformed so that 2018 is 1 and 2019 is 2.
+predict.poly2.1 <- function(zm, new.data){
+  
+  pred.Y <- vector(mode = "list", length = nrow(new.data))
+  k <- 1
+  for (k in 1:nrow(new.data)){
+    b0 <- extract.samples(paste0("b0[", new.data$Month[k], 
+                                 ",", new.data$Year[k], "]"), zm$samples)
+    b1 <- extract.samples(paste0("b1[", new.data$Month[k], "]"), zm$samples)
+    b12 <- extract.samples(paste0("b12[", new.data$Month[k], "]"), zm$samples)
+    pred.Y[[k]] <- b0 + b1 * new.data$scaled_Dist_Berm[k] + 
+      b12 * (new.data$scaled_Dist_Berm[k])^2 
+    
+  }
+  
+  # get quantiles
+  qtiles <- lapply(pred.Y, 
+                   FUN = quantile, c(0.025, 0.5, 0.975),
+                   na.rm = T)
+  
+  qtiles.df <- data.frame(do.call(rbind, lapply(qtiles, FUN = t)))
+  
+  out.list <- list(pred.Y = pred.Y,
+                   qtiles = qtiles.df)
+  return(out.list)
+  
+}
+
+
+# extract posteriors for 2nd order polynomial with a year term
 extract.prediction.poly2 <- function(zm, jags.data){
   length.b <- jags.data$n.months * jags.data$n.years
   length.year <- jags.data$n.years
@@ -207,6 +269,65 @@ extract.prediction.poly2 <- function(zm, jags.data){
   
   return(out.list)
 }
+
+# extract posteriors for 2nd order polynomial with no year term
+# but month/year specific intercepts
+extract.prediction.poly2.1 <- function(zm, jags.data){
+  length.b <- jags.data$n.months * jags.data$n.years
+  length.year <- jags.data$n.years
+  
+  # using centered and scaled distances
+  Dvec <- seq(floor(min(jags.data$Dist_Berm)), 
+              (max(jags.data$Dist_Berm)), 
+              by = 0.1)  # min and max of Distance from Berm
+
+  b0 <- b1 <- b12 <- pred.Y <- vector(mode = "list", length = length.b)
+  k <- k1 <- c <- 1
+  for (k1 in 1:length.year){
+    for (k in 1:jags.data$n.months){
+      b0[[c]] <- extract.samples(paste0("b0[", k,",", k1, "]"), zm$samples)
+      b1[[c]] <- extract.samples(paste0("b1[", k, "]"), zm$samples)
+      b12[[c]] <- extract.samples(paste0("b12[", k, "]"), zm$samples)
+      
+      pred.Y[[c]] <- b0[[c]] + b1[[c]] %*% t(Dvec) + 
+        b12[[c]] %*% t(Dvec^2) 
+      
+      c <- c + 1
+    }
+  }
+  
+  # collect all posterior
+  coefs <- c(b0, b1, b12)
+  
+  # get quantiles
+  qtiles <- lapply(pred.Y, 
+                   FUN = function(x) apply(x, MARGIN = 2, 
+                                           FUN = quantile, c(0.025, 0.5, 0.975)))
+  
+  qtiles.mat <- data.frame(do.call(rbind, lapply(qtiles, FUN = t)))
+  
+  year.vec <- rep(seq(1, length.year), 
+                  each = length(Dvec) * jags.data$n.months)
+  
+  month.vec <- rep(rep(seq(1, jags.data$n.months), 
+                       each = length(Dvec)),
+                   length.year)
+  
+  pred.df <- data.frame(Month2 = month.vec, 
+                        Year = year.vec + 2017, 
+                        Dist_Berm = rep(rep(Dvec, jags.data$n.months), 
+                                        length.year),
+                        pred_low = qtiles.mat$X2.5., 
+                        pred_med = qtiles.mat$X50., 
+                        pred_high = qtiles.mat$X97.5.)
+  
+  
+  out.list <- list(pred.df = pred.df,
+                   coefs = coefs)
+  
+  return(out.list)
+}
+
 
 # extract posteriors
 extract.prediction.1 <- function(zm, jags.data){

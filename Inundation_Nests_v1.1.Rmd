@@ -3,7 +3,13 @@ title: "R Notebook"
 output: html_notebook
 ---
 
-In this Notebook, I use the second-order polynomial function fitted to the inundation data in Inundation_v2.Rmd to evaluate probabilities of inundation for nests. 
+In this Notebook, I use the second-order polynomial function fitted to the inundation data in Inundation_v2.Rmd to evaluate probabilities of inundation for nests. This version (v1.1) computes new measures:
+
+1. Compute proportions of phase-1 deaths (Yes, and to adjust proportion (%) of phase 1 deaths from % of failed eggs to % of total eggs recovered for each nest) for all nests. Then look at how they are affected by the inundation line for the first 30 days of incubation. I'm envisioning this to be plots similar to the last ones but change the hatch success to proportion of phase-1 deaths.
+
+2.   For each nest, compute the height above inundation line (+/- 95% confidence intervals). 
+
+Yep, that’d be great and yes, for max inundation heights for each of the 3 months post laying. These curves look good.
 
 
 Load essential libraries first.
@@ -89,17 +95,20 @@ nest.data %>% mutate(Year = ifelse(Date_laid < as.Date("2018-05-01"), 2018, 2019
   mutate(Month = month(Date_laid),
          Month2 = ifelse(Month > 9, Month - 9, Month + 3),
          Month_f = factor(Month, levels = c("10", "11", "12", "1", "2", "3", "4")),
-         scaled_Dist_Berm = (Berm_Dist - min.Dist)/sd.Dist) -> nest.data
+         scaled_Dist_Berm = (Berm_Dist - min.Dist)/sd.Dist,
+         Phase_1_death = Phase_1/Total_clutch,
+         Phase_2_death = Phase_2/Total_clutch) -> nest.data
 
 ```
 
 
 Second order polynomial with month-specific intercept and coefficients for the distance plus year effect:
 
-mu.y[i] <- b0[month[i]] + b1[month[i]] * Dist_Berm[i] + b12[month[i]] * Dist_Berm[i] * Dist_Berm[i] + b2 * year[i]
+mu.y[i] <- b0[month[i], year[i]] + b1[month[i]] * Dist_Berm[i] + b12[month[i]] * Dist_Berm[i] * Dist_Berm[i]
 
 y[i] ~ dnorm(mu.y[i], tau.y)  
 
+Results of model fitting is saved in a .rds file (ran in inundation_Nests_v1.Rmd).
 ```{r}
 jags.data <- list(y = inund$log_inund,
                   month = inund$Month2,
@@ -113,34 +122,19 @@ MCMC.params <- list(n.samples = 10000,
                     n.burnin = 5000,
                     n.thin = 5,
                     n.chains = 5,
-                    model.file = "models/Model_Poly2_month_year.txt")
+                    model.file = "models/Model_Poly2_1_month_year.txt")
 
 parameters <- c("b0", "b1", "b2", "b12", "sigma.y",
                  "fit", "fit.new", "deviance")
 
-if (!file.exists("RData/Poly2_month_year.rds")){
-  jm.2 <- jags(data = jags.data,
-               #inits = inits,
-               parameters.to.save= parameters,
-               model.file = MCMC.params$model.file,
-               n.chains = MCMC.params$n.chains,
-               n.burnin = MCMC.params$n.burnin,
-               n.thin = MCMC.params$n.thin,
-               n.iter = MCMC.params$n.samples,
-               DIC = T, 
-               parallel=T)
-  
-  saveRDS(jm.2, file = "RData/Poly2_month_year.rds")  
-} else {
-  jm.2 <- readRDS("RData/Poly2_month_year.rds")
-}
+jm.2 <- readRDS("RData/Poly2_1_month_year.rds")
 
 ```
 
 
 Extract the posterior samples and create plots
 ```{r}
-pred.list.jm.2 <- extract.prediction.poly2(zm = jm.2, 
+pred.list.jm.2 <- extract.prediction.poly2.1(zm = jm.2, 
                                            jags.data = jags.data)
 
 pred.list.jm.2$pred.df %>% 
@@ -152,23 +146,23 @@ pred.list.jm.2$pred.df %>%
 ggplot() + 
    geom_point(data = nest.data,
               aes(x = scaled_Dist_Berm,
-                  y = log(Nest_Elevation),
-                  color = rate_success),
+                  y = (Nest_Elevation),
+                  color = Phase_1_death),
               alpha = 0.5) +
   geom_point(data = inund,
              aes(x = scaled_Dist_Berm,
-                 y = log(InundHeight_AbvLAT)),
+                 y = (InundHeight_AbvLAT)),
              color = "red") +
   geom_path(data = pred.df.jm.2,
             aes(x = Dist_Berm,
-                 y = (pred_med))) +
+                 y = exp(pred_med))) +
   geom_ribbon(data = pred.df.jm.2,
               aes(x = Dist_Berm,
-                  ymin = (pred_low),
-                  ymax = (pred_high)),
+                  ymin = exp(pred_low),
+                  ymax = exp(pred_high)),
               alpha = 0.5) +
   facet_grid(Year ~ Month_f) + 
-  labs(title = "Date laid")
+  labs(title = "Date laid + Phase 1")
 
 # ggsave(filename = "figures/poly2_success.png",
 #        dpi = 600, device = "png",
@@ -176,92 +170,69 @@ ggplot() +
 
 ```
 
-The fit of the model doesn't look that great... 
+There may be some patterns of high phase 1 mortality below regression lines? Let's try measuring the distance between each nest and the regression line.
 
-Eliminating the year term but making the intercept month/year specific
-
-Model:
-mu.y[i] <- b0[month[i], year[i]] + b1[month[i]] * Dist_Berm[i] + b12[month[i]] * Dist_Berm[i] * Dist_Berm[i]
-
+Phase 2?
 ```{r}
-jags.data <- list(y = inund$log_inund,
-                  month = inund$Month2,
-                  year = inund$Year2,
-                  Dist_Berm = inund$scaled_Dist_Berm,
-                  N = nrow(inund),
-                  n.months = length(unique(inund$Month2)),
-                  n.years = length(unique(inund$Year2)))
-
-MCMC.params <- list(n.samples = 10000,
-                    n.burnin = 5000,
-                    n.thin = 5,
-                    n.chains = 5,
-                    model.file = "models/Model_Poly2_1_month_year.txt")
-
-parameters <- c("b0", "b1",  "b12", "sigma.y",
-                 "fit", "fit.new", "deviance")
-
-if (!file.exists("RData/Poly2_1_month_year.rds")){
-  jm.2.1 <- jags(data = jags.data,
-               #inits = inits,
-               parameters.to.save= parameters,
-               model.file = MCMC.params$model.file,
-               n.chains = MCMC.params$n.chains,
-               n.burnin = MCMC.params$n.burnin,
-               n.thin = MCMC.params$n.thin,
-               n.iter = MCMC.params$n.samples,
-               DIC = T, 
-               parallel=T)
-  
-  saveRDS(jm.2.1, file = "RData/Poly2_1_month_year.rds")  
-} else {
-  jm.2.1 <- readRDS("RData/Poly2_1_month_year.rds")
-}
-
-```
-
-
-Extract the posterior samples and create plots
-```{r}
-pred.list.jm.2.1 <- extract.prediction.poly2.1(zm = jm.2.1, 
-                                           jags.data = jags.data)
-
-pred.list.jm.2.1$pred.df %>% 
-  mutate(Month = ifelse(Month2 < 4, Month2 + 9, Month2 - 3),
-         Month_f = factor(Month, 
-                          levels = c("10", "11", "12", 
-                                     "1", "2", "3", "4"))) -> pred.df.jm.2.1
-
 ggplot() + 
    geom_point(data = nest.data,
               aes(x = scaled_Dist_Berm,
-                  y = log(Nest_Elevation),
-                  color = rate_success),
+                  y = (Nest_Elevation),
+                  color = Phase_2_death),
               alpha = 0.5) +
   geom_point(data = inund,
              aes(x = scaled_Dist_Berm,
-                 y = log(InundHeight_AbvLAT)),
+                 y = (InundHeight_AbvLAT)),
              color = "red") +
-  geom_path(data = pred.df.jm.2.1,
+  geom_path(data = pred.df.jm.2,
             aes(x = Dist_Berm,
-                 y = (pred_med))) +
-  geom_ribbon(data = pred.df.jm.2.1,
+                 y = exp(pred_med))) +
+  geom_ribbon(data = pred.df.jm.2,
               aes(x = Dist_Berm,
-                  ymin = (pred_low),
-                  ymax = (pred_high)),
+                  ymin = exp(pred_low),
+                  ymax = exp(pred_high)),
               alpha = 0.5) +
   facet_grid(Year ~ Month_f) + 
-  labs(title = "Date laid")
-
-# ggsave(filename = "figures/poly2_success.png",
-#        dpi = 600, device = "png",
-#        height = 3.53, width = 5.73)
+  labs(title = "Date laid + Phase 2")
 
 ```
 
-I like this one better (look at the difference in the fit for Apr 2019) and DIC is less also. 
+Not sure why a couple of the proportion are >1...  This is from how total clutch size was computed in the data file. It doesn't make sense but asked a question (2020-04-09). 
 
-Shifting time of nests by some number of days
+
+```{r}
+nest.data %>% select(Month2, Year, scaled_Dist_Berm) %>%
+  mutate(Year = ifelse(Year == 2018, 1, 2),
+         Month = Month2) -> new.data
+
+pred.data <- predict.poly2.1(zm = jm.2, new.data = new.data)
+
+pred.data$qtiles %>% transmute(log.pred.inund.elev.50 = X50.,
+                               log.pred.inund.elev.2.5 = X2.5.,
+                               log.pred.inund.elev.97.5 = X97.5.) %>%
+  cbind(nest.data) %>%
+  mutate(dif.nest.pred = Nest_Elevation - exp(log.pred.inund.elev.50),
+         dif.nest.pred.2.5 = Nest_Elevation - exp(log.pred.inund.elev.2.5),
+         dif.nest.pred.97.5 = Nest_Elevation - exp(log.pred.inund.elev.97.5),
+         pred.inund.elev = exp(log.pred.inund.elev.50),
+         pred.inund.elev.2.5 = exp(log.pred.inund.elev.2.5),
+         pred.inund.elev.97.5 = exp(log.pred.inund.elev.97.5)) -> nest.data.2
+
+#write.csv(nest.data.2, file = "data/nest_inund_prediction.csv")
+
+ggplot(nest.data.2) + 
+  geom_errorbar(aes(x = Nest_Elevation,
+                    ymin = pred.inund.elev.2.5,
+                    ymax = pred.inund.elev.97.5)) +
+  geom_point(aes(x = Nest_Elevation,
+                 y = pred.inund.elev,
+                 color = Month_f)) 
+
+```
+
+Look at time lag:
+
+Shifting time of nests by 15 days
 ```{r}
 nest.data %>% mutate(laid_15d = Date_laid + 15,
                      laid_30d = Date_laid + 30,
@@ -286,25 +257,29 @@ nest.data %>% mutate(laid_15d = Date_laid + 15,
 
 nest.data %>% select(scaled_Dist_Berm, 
                      Nest_Elevation, 
-                     rate_success, 
+                     Phase_1_death, 
+                     Month_15d,
                      Month_15d_f, 
                      Year) %>%
-  mutate(Month_f = Month_15d_f) -> nest.data.15d
+  mutate(Month2 = ifelse(Month_15d > 9, 
+                         Month_15d - 9, 
+                         Month_15d + 3),
+         Month_f = Month_15d_f) -> nest.data.15d
 
 ggplot() + 
    geom_point(data = nest.data.15d,
               aes(x = scaled_Dist_Berm,
                   y = log(Nest_Elevation),
-                  color = rate_success),
+                  color = Phase_1_death),
               alpha = 0.5) +
   geom_point(data = inund,
              aes(x = scaled_Dist_Berm,
                  y = log(InundHeight_AbvLAT)),
              color = "red") +
-  geom_path(data = pred.df.jm.2.1,
+  geom_path(data = pred.df.jm.2,
             aes(x = Dist_Berm,
                  y = (pred_med))) +
-  geom_ribbon(data = pred.df.jm.2.1,
+  geom_ribbon(data = pred.df.jm.2,
               aes(x = Dist_Berm,
                   ymin = (pred_low),
                   ymax = (pred_high)),
@@ -312,34 +287,57 @@ ggplot() +
   facet_grid(Year ~ Month_f) + 
   labs(title = "Date laid + 15 days")
 
-ggsave(filename = "figures/poly2_success_15d.png",
-       dpi = 600, device = "png",
-       height = 3.53, width = 5.73)
+```
+
+
+```{r}
+nest.data.15d %>% select(Month2, Year, scaled_Dist_Berm) %>%
+  mutate(Year = ifelse(Year == 2018, 1, 2),
+         Month = Month2) -> new.data.15d
+
+pred.data.15d <- predict.poly2.1(zm = jm.2, new.data = new.data.15d)
+
+pred.data.15d$qtiles %>% transmute(log.pred.nest.elev.50 = X50.,
+                                   log.pred.nest.elev.2.5 = X2.5.,
+                                   log.pred.nest.elev.97.5 = X97.5.) %>%
+  cbind(nest.data.15d) %>%
+  mutate(dif.nest.pred = Nest_Elevation - exp(log.pred.nest.elev.50)) -> nest.data.15d
+
+ggplot(nest.data.15d) + 
+  geom_point(aes(x = dif.nest.pred,
+                 y = Phase_1_death))
+
 
 ```
+
+Shifting time of nests by 30 days
 
 ```{r}
 nest.data %>% select(scaled_Dist_Berm, 
                      Nest_Elevation, 
-                     rate_success, 
-                     Month_30d_f,
+                     Phase_1_death, 
+                     Month_30d,
+                     Month_30d_f, 
                      Year) %>%
-  mutate(Month_f = Month_30d_f) -> nest.data.30d
+  mutate(Month2 = ifelse(Month_30d > 9, 
+                         Month_30d - 9, 
+                         Month_30d + 3),
+         Month_f = Month_30d_f) -> nest.data.30d
 
 ggplot() + 
    geom_point(data = nest.data.30d,
               aes(x = scaled_Dist_Berm,
                   y = log(Nest_Elevation),
-                  color = rate_success),
+                  color = Phase_1_death),
               alpha = 0.5) +
   geom_point(data = inund,
              aes(x = scaled_Dist_Berm,
                  y = log(InundHeight_AbvLAT)),
              color = "red") +
-  geom_path(data = pred.df.jm.2.1,
+  geom_path(data = pred.df.jm.2,
             aes(x = Dist_Berm,
                  y = (pred_med))) +
-  geom_ribbon(data = pred.df.jm.2.1,
+  geom_ribbon(data = pred.df.jm.2,
               aes(x = Dist_Berm,
                   ymin = (pred_low),
                   ymax = (pred_high)),
@@ -347,9 +345,59 @@ ggplot() +
   facet_grid(Year ~ Month_f) + 
   labs(title = "Date laid + 30 days")
 
-ggsave(filename = "figures/poly2_success_30d.png",
-       dpi = 600, device = "png",
-       height = 3.53, width = 5.73)
+```
+
+
+
+```{r}
+
+nest.data.30d %>% select(Month2, Year, scaled_Dist_Berm) %>%
+  mutate(Year = ifelse(Year == 2018, 1, 2),
+         Month = Month2) -> new.data.30d
+
+pred.data.30d <- predict.poly2.1(zm = jm.2, new.data = new.data.30d)
+
+pred.data.30d$qtiles %>% transmute(log.pred.nest.elev.50 = X50.,
+                                   log.pred.nest.elev.2.5 = X2.5.,
+                                   log.pred.nest.elev.97.5 = X97.5.) %>%
+  cbind(nest.data.30d) %>%
+  mutate(dif.nest.pred = Nest_Elevation - exp(log.pred.nest.elev.50)) -> nest.data.30d
+
+ggplot(nest.data.30d) + 
+  geom_point(aes(x = dif.nest.pred,
+                 y = Phase_1_death))
+
+
+```
+
+There is no obvious pattern... 
+
+```{r}
+
+ggplot() + 
+   geom_point(data = nest.data.30d,
+              aes(x = scaled_Dist_Berm,
+                  y = log(Nest_Elevation),
+                  color = Phase_1_death),
+              alpha = 0.5) +
+  geom_point(data = inund,
+             aes(x = scaled_Dist_Berm,
+                 y = log(InundHeight_AbvLAT)),
+             color = "red") +
+  geom_path(data = pred.df.jm.2,
+            aes(x = Dist_Berm,
+                 y = (pred_med))) +
+  geom_ribbon(data = pred.df.jm.2,
+              aes(x = Dist_Berm,
+                  ymin = (pred_low),
+                  ymax = (pred_high)),
+              alpha = 0.5) +
+  facet_grid(Year ~ Month_f) + 
+  labs(title = "Date laid + 30 days")
+
+# ggsave(filename = "figures/poly2_success_30d.png",
+#        dpi = 600, device = "png",
+#        height = 3.53, width = 5.73)
 
 ```
 
@@ -371,10 +419,10 @@ ggplot() +
              aes(x = scaled_Dist_Berm,
                  y = log(InundHeight_AbvLAT)),
              color = "red") +
-  geom_path(data = pred.df.jm.2.1,
+  geom_path(data = pred.df.jm.2,
             aes(x = Dist_Berm,
                  y = (pred_med))) +
-  geom_ribbon(data = pred.df.jm.2.1,
+  geom_ribbon(data = pred.df.jm.2,
               aes(x = Dist_Berm,
                   ymin = (pred_low),
                   ymax = (pred_high)),
@@ -382,9 +430,9 @@ ggplot() +
   facet_grid(Year ~ Month_f) + 
   labs(title = "Date laid + 45 days")
 
-ggsave(filename = "figures/poly2_success_45d.png",
-       dpi = 600, device = "png",
-       height = 3.53, width = 5.73)
+# ggsave(filename = "figures/poly2_success_45d.png",
+#        dpi = 600, device = "png",
+#        height = 3.53, width = 5.73)
 
 ```
 
@@ -407,10 +455,10 @@ ggplot() +
              aes(x = scaled_Dist_Berm,
                  y = log(InundHeight_AbvLAT)),
              color = "red") +
-  geom_path(data = pred.df.jm.2.1,
+  geom_path(data = pred.df.jm.2,
             aes(x = Dist_Berm,
                  y = (pred_med))) +
-  geom_ribbon(data = pred.df.jm.2.1,
+  geom_ribbon(data = pred.df.jm.2,
               aes(x = Dist_Berm,
                   ymin = (pred_low),
                   ymax = (pred_high)),
@@ -418,9 +466,9 @@ ggplot() +
   facet_grid(Year ~ Month_f) + 
   labs(title = "Date laid + 60 days")
 
-ggsave(filename = "figures/poly2_success_60d.png",
-       dpi = 600, device = "png",
-       height = 3.53, width = 5.73)
+# ggsave(filename = "figures/poly2_success_60d.png",
+#        dpi = 600, device = "png",
+#        height = 3.53, width = 5.73)
 
 ```
 
