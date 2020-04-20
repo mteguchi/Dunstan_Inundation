@@ -266,10 +266,12 @@ Try 30 and 45 days offset. Offset of 15 days is the same as 30 days.
 
 nest.data %>% select(fid,
                      Habitat,
+                     Berm_Dist,
                      scaled_Dist_Berm, 
                      Nest_Elevation, 
                      Phase_1_death, 
                      rate_success,
+                     Total_clutch,
                      Month_30d,
                      Month_30d_f, 
                      Year) %>%
@@ -335,9 +337,11 @@ nest.data.45d %>% select(fid,
               Habitat = as.factor(Habitat),
               scaled_Dist_Berm = scaled_Dist_Berm, 
               Nest_Elevation = Nest_Elevation, 
-              rate_success = rate_success, 
+              rate_success = rate_success/100, 
               Phase_1_death = Phase_1_death,
               dif_nest_pred = dif.nest.pred,
+              Berm_Dist = Berm_Dist,
+              Total_Clutch = Total_clutch,
               RV = runif(nrow(nest.data.30d), 0, 1)) -> nest.data.RF
 
 
@@ -395,6 +399,8 @@ Can we predict Phase_1_death with all possible variables?
 ntree <- 500
 
 M.1 <- as.formula("Phase_1_death ~ scaled_Dist_Berm + 
+                    Berm_Dist + 
+                    Total_Clutch +
                   Habitat +
                   Nest_Elevation + 
                   log.pred.nest.elev.50.30d + 
@@ -406,7 +412,7 @@ M.1 <- as.formula("Phase_1_death ~ scaled_Dist_Berm +
                   dif_nest_pred +
                   RV")
 
-if (!file.exists("RData/RF_15d_M_1_out.rds")){
+if (!file.exists("RData/RF_M_1_out.rds")){
   RF.M.1 <- cforest(formula = M.1,
                     data = nest.data.RF,
                     control = cforest_unbiased(ntree = ntree,
@@ -448,15 +454,15 @@ ggplot(data = var.imp.df) +
         axis.title.x = element_text(size =12))
 ```
 
-Rate success is most important. 
+Difference in nest height and predicted inundation level and nest elevation are important. 
 
 
 Compare the data and predictions:
 
 ```{r}
-nest.data.30d$PREDICTED <- pred.RF.M.1[,1]
-ggplot(data = nest.data.30d) +
-  geom_point(aes(x = Phase_1_death, y = PREDICTED)) + 
+nest.data.RF$Phase_1_death_prediction <- pred.RF.M.1[,1]
+ggplot(data = nest.data.RF) +
+  geom_point(aes(x = Phase_1_death, y = Phase_1_death_prediction)) + 
   geom_abline(slope = 1.0, intercept = 0.0) + 
   ylim(c(0, 1)) + 
   labs(x = "Observed phase 1 death", 
@@ -464,95 +470,79 @@ ggplot(data = nest.data.30d) +
 
 ```
 
+This doesn't look so good... There is a positive relationship but not very strong... 
+
+What about overall hatching success?
 
 ```{r}
+M.2 <- as.formula("rate_success ~ scaled_Dist_Berm + 
+                  Berm_Dist + 
+                  Total_Clutch +
+                  Habitat +
+                  Nest_Elevation + 
+                  log.pred.nest.elev.50.30d + 
+                  log.pred.nest.elev.2.5.30d + 
+                  log.pred.nest.elev.97.5.30d +
+                  log.pred.nest.elev.50.45d + 
+                  log.pred.nest.elev.2.5.45d + 
+                  log.pred.nest.elev.97.5.45d +
+                  dif_nest_pred +
+                  RV")
 
-ggplot() + 
-   geom_point(data = nest.data.45d,
-              aes(x = scaled_Dist_Berm,
-                  y = log(Nest_Elevation),
-                  color = Phase_1_death),
-              alpha = 0.5) +
-  geom_point(data = inund,
-             aes(x = scaled_Dist_Berm,
-                 y = log(InundHeight_AbvLAT)),
-             color = "red") +
-  geom_path(data = pred.df.jm.2,
-            aes(x = Dist_Berm,
-                 y = (pred_med))) +
-  geom_ribbon(data = pred.df.jm.2,
-              aes(x = Dist_Berm,
-                  ymin = (pred_low),
-                  ymax = (pred_high)),
-              alpha = 0.5) +
-  facet_grid(Year ~ Month_f) + 
-  labs(title = "Date laid + 45 days")
+if (!file.exists("RData/RF_M_2_out.rds")){
+  RF.M.2 <- cforest(formula = M.2,
+                    data = nest.data.RF,
+                    control = cforest_unbiased(ntree = ntree,
+                                               trace = 500))
+  saveRDS(RF.M.2, file = "RData/RF_M_2_out.rds")
+} else {
+  RF.M.2 <- readRDS("RData/RF_M_2_out.rds")
+}
 
-# ggsave(filename = "figures/poly2_success_45d.png",
-#        dpi = 600, device = "png",
-#        height = 3.53, width = 5.73)
+if (!file.exists("RData/RF_M_2_varImp.rds")){
+  var.imp.M.2 <- sort(varimp(RF.M.2), decreasing = FALSE)
+  saveRDS(var.imp.M.2, file = "RData/RF_M_2_varImp.rds")
+} else {
+  var.imp.M.2 <- readRDS("RData/RF_M_2_varImp.rds")
+}
+
+if (!file.exists("RData/RF_M_2_predict.rds")){
+  pred.RF.M.2 <- predict(RF.M.2, newdata = NULL)
+  saveRDS(pred.RF.M.2, file = "RData/RF_M_2_predict.rds")
+} else {
+  pred.RF.M.2 <- readRDS("RData/RF_M_2_predict.rds")
+}
 
 ```
 
 
+
+Look at the variable importance:
 ```{r}
+var.imp.M.2.df <- data.frame(var.imp.M.2)
+var.imp.M.2.df$Variable <- rownames(var.imp.M.2.df)
 
-
-ggplot(nest.data.45d) + 
-  geom_point(aes(x = dif.nest.pred,
-                 y = Phase_1_death))
-
-
+ggplot(data = var.imp.M.2.df) + 
+  geom_point(aes(x = var.imp, y = reorder(Variable, var.imp)),
+             size = 3) + 
+  theme_bw() + 
+  labs(x = "Variable importance") + 
+  theme(axis.title.y = element_blank(),
+        axis.title.x = element_text(size =12))
 ```
 
-Maybe there is a little bit of declining as dif.nest.pred increases? 
+Difference in nest height and predicted inundation level and nest elevation are important. 
+
+
+Compare the data and predictions:
 
 ```{r}
-
-nest.data.45d %>%
-  mutate(logit.phase.1 = car::logit(Phase_1_death, adjust = 0.025)) -> nest.data.45d
-
-fit.1 <- lm(logit.phase.1 ~ dif.nest.pred, data = nest.data.45d)
-
-summary(fit.1)
-```
-
-A neagative relationship but not very convincing... 
-
-
-
-```{r}
-nest.data %>% select(scaled_Dist_Berm, 
-                     Nest_Elevation, 
-                     rate_success, 
-                     Month_60d_f,
-                     Year) %>%
-  mutate(Month_f = Month_60d_f) -> nest.data.60d
-
-ggplot() + 
-   geom_point(data = nest.data.60d,
-              aes(x = scaled_Dist_Berm,
-                  y = log(Nest_Elevation),
-                  color = rate_success),
-              alpha = 0.5) +
-  geom_point(data = inund,
-             aes(x = scaled_Dist_Berm,
-                 y = log(InundHeight_AbvLAT)),
-             color = "red") +
-  geom_path(data = pred.df.jm.2,
-            aes(x = Dist_Berm,
-                 y = (pred_med))) +
-  geom_ribbon(data = pred.df.jm.2,
-              aes(x = Dist_Berm,
-                  ymin = (pred_low),
-                  ymax = (pred_high)),
-              alpha = 0.5) +
-  facet_grid(Year ~ Month_f) + 
-  labs(title = "Date laid + 60 days")
-
-# ggsave(filename = "figures/poly2_success_60d.png",
-#        dpi = 600, device = "png",
-#        height = 3.53, width = 5.73)
+nest.data.RF$rate_success_prediction <- pred.RF.M.2[,1]
+ggplot(data = nest.data.RF) +
+  geom_point(aes(x = rate_success, y = rate_success_prediction)) + 
+  geom_abline(slope = 1.0, intercept = 0.0) + 
+  ylim(c(0, 1)) + 
+  labs(x = "Observed success rate", 
+       y = "Predicted success rate")
 
 ```
-
