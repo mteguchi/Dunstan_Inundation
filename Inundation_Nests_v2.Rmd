@@ -516,7 +516,7 @@ ggplot(data = var.imp.df) +
   theme(axis.title.y = element_blank(),
         axis.title.x = element_text(size =12))
 
-ggsave(filename = "figures/varImp_RF_M1.png", device = "png", dpi = 600)
+#ggsave(filename = "figures/varImp_RF_M1.png", device = "png", dpi = 600)
 ```
 
 
@@ -535,14 +535,6 @@ ggplot(data = nest.data.RF) +
 
 #ggsave(filename = "figures/RF_M1_prediction.png", device = "png", dpi = 600)
 ```
-
-
-
-```{r}
-rp.importance(rfP.M.1)
-```
-
-
 
 
 This doesn't look so good... There is a positive relationship but not very strong... 
@@ -609,13 +601,52 @@ ggplot(data = var.imp.M.2.df) +
         axis.title.x = element_text(size =12))
 ```
 
-Difference in nest height and predicted inundation level and nest elevation are important. 
+Difference in nest height and predicted inundation level and nest elevation are important. Again, a lot of useless variables. So, remove...
+
+
+```{r}
+M.2.2 <- as.formula("rate_success ~ scaled_Dist_Berm + 
+                  Berm_Dist + 
+                  Total_Clutch +
+                  Habitat +
+                  Nest_Elevation + 
+                  log.pred.nest.elev.2.5.45d + 
+                  dif_nest_pred +
+                  Year +
+                  Eastings2 +
+                  RV")
+
+if (!file.exists("RData/RF_M_2_2_out.rds")){
+  RF.M.2.2 <- cforest(formula = M.2.2,
+                    data = nest.data.RF,
+                    control = cforest_unbiased(ntree = ntree,
+                                               trace = 500))
+  saveRDS(RF.M.2.2, file = "RData/RF_M_2_2_out.rds")
+} else {
+  RF.M.2.2 <- readRDS("RData/RF_M_2_2_out.rds")
+}
+
+if (!file.exists("RData/RF_M_2_2_varImp.rds")){
+  var.imp.M.2.2 <- sort(varimp(RF.M.2.2), decreasing = FALSE)
+  saveRDS(var.imp.M.2.2, file = "RData/RF_M_2_2_varImp.rds")
+} else {
+  var.imp.M.2.2 <- readRDS("RData/RF_M_2_2_varImp.rds")
+}
+
+if (!file.exists("RData/RF_M_2_2_predict.rds")){
+  pred.RF.M.2.2 <- predict(RF.M.2.2, newdata = NULL)
+  saveRDS(pred.RF.M.2.2, file = "RData/RF_M_2_2_predict.rds")
+} else {
+  pred.RF.M.2.2 <- readRDS("RData/RF_M_2_2_predict.rds")
+}
+
+```
 
 
 Compare the data and predictions:
 
 ```{r}
-nest.data.RF$rate_success_prediction <- pred.RF.M.2[,1]
+nest.data.RF$rate_success_prediction <- pred.RF.M.2.2[,1]
 ggplot(data = nest.data.RF) +
   geom_point(aes(x = rate_success, y = rate_success_prediction)) + 
   geom_abline(slope = 1.0, intercept = 0.0) + 
@@ -624,3 +655,6 @@ ggplot(data = nest.data.RF) +
        y = "Predicted success rate")
 
 ```
+
+About the same as the Phase 1 deaths... 
+
