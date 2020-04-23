@@ -24,7 +24,7 @@ library(jagsUI)
 library(bayesplot)
 library(party)
 library(rfPermute)
-
+library(randomForestExplainer)
 source("Dunstan_Inundation_fcns.R")
 ```
 
@@ -274,13 +274,18 @@ nest.data %>% select(fid,
                      Total_clutch,
                      Month_30d,
                      Month_30d_f, 
-                     Year) %>%
+                     Year,
+                     Northings,
+                     Eastings) %>%
   mutate(Month2 = ifelse(Month_30d > 9, 
                          Month_30d - 9, 
                          Month_30d + 3),
-         Month_f = Month_30d_f) -> nest.data.30d
+         Month_f = Month_30d_f,
+         Northings2 = (Northings - min(Northings))/1000,
+         Eastings2 = (Eastings - min(Eastings))/1000) -> nest.data.30d
 
-nest.data.30d %>% select(Month2, Year, scaled_Dist_Berm) %>%
+nest.data.30d %>% 
+  select(Month2, Year, scaled_Dist_Berm) %>%
   mutate(Year = ifelse(Year == 2018, 1, 2),
          Month = Month2) -> new.data.30d
 
@@ -342,6 +347,9 @@ nest.data.45d %>% select(fid,
               dif_nest_pred = dif.nest.pred,
               Berm_Dist = Berm_Dist,
               Total_Clutch = Total_clutch,
+              Year = Year,
+              Northings2 = Northings2,
+              Eastings2 = Eastings2,
               RV = runif(nrow(nest.data.30d), 0, 1)) -> nest.data.RF
 
 
@@ -402,6 +410,7 @@ M.1 <- as.formula("Phase_1_death ~ scaled_Dist_Berm +
                     Berm_Dist + 
                     Total_Clutch +
                   Habitat +
+                  Year +
                   Nest_Elevation + 
                   log.pred.nest.elev.50.30d + 
                   log.pred.nest.elev.2.5.30d + 
@@ -410,6 +419,8 @@ M.1 <- as.formula("Phase_1_death ~ scaled_Dist_Berm +
                   log.pred.nest.elev.2.5.45d + 
                   log.pred.nest.elev.97.5.45d +
                   dif_nest_pred +
+                  Northings2 +
+                  Eastings2 +
                   RV")
 
 if (!file.exists("RData/RF_M_1_out.rds")){
@@ -439,7 +450,6 @@ if (!file.exists("RData/RF_M_1_predict.rds")){
 ```
 
 
-
 Look at the variable importance:
 ```{r}
 var.imp.df <- data.frame(var.imp)
@@ -454,21 +464,86 @@ ggplot(data = var.imp.df) +
         axis.title.x = element_text(size =12))
 ```
 
-Difference in nest height and predicted inundation level and nest elevation are important. 
+Difference in nest height and predicted inundation level and nest elevation are important. There are several variables that were less important than random numbers. So, remove them and rerun (although unnecessary...).
+
+```{r}
+M.1.1 <- as.formula("Phase_1_death ~ scaled_Dist_Berm + 
+                    Berm_Dist + 
+                    Habitat +
+                    Nest_Elevation + 
+                    log.pred.nest.elev.2.5.30d + 
+                    dif_nest_pred +
+                    Eastings2 +
+                    RV")
+
+if (!file.exists("RData/RF_M_1_1_out.rds")){
+  RF.M.1.1 <- cforest(formula = M.1.1,
+                      data = nest.data.RF,
+                      control = cforest_unbiased(ntree = ntree,
+                                                 trace = 500))
+  saveRDS(RF.M.1.1, file = "RData/RF_M_1_1_out.rds")
+} else {
+  RF.M.1.1 <- readRDS("RData/RF_M_1_1_out.rds")
+}
+
+if (!file.exists("RData/RF_M_1_1_varImp.rds")){
+  var.imp.1.1 <- sort(varimp(RF.M.1.1), decreasing = FALSE)
+  saveRDS(var.imp.1.1, file = "RData/RF_M_1_1_varImp.rds")
+} else {
+  var.imp.1.1 <- readRDS("RData/RF_M_1_1_varImp.rds")
+}
+
+if (!file.exists("RData/RF_M_1_1_predict.rds")){
+  pred.RF.M.1.1 <- predict(RF.M.1.1, newdata = NULL)
+  saveRDS(pred.RF.M.1.1, file = "RData/RF_M_1_1_predict.rds")
+} else {
+  pred.RF.M.1.1 <- readRDS("RData/RF_M_1_1_predict.rds")
+}
+```
+
+
+Look at the variable importance:
+```{r}
+var.imp.df <- data.frame(var.imp.1.1)
+var.imp.df$Variable <- rownames(var.imp.df)
+
+ggplot(data = var.imp.df) + 
+  geom_point(aes(x = var.imp.1.1, 
+                 y = reorder(Variable, var.imp.1.1)),
+             size = 3) + 
+  theme_bw() + 
+  labs(x = "Variable importance") + 
+  theme(axis.title.y = element_blank(),
+        axis.title.x = element_text(size =12))
+
+ggsave(filename = "figures/varImp_RF_M1.png", device = "png", dpi = 600)
+```
+
 
 
 Compare the data and predictions:
 
 ```{r}
-nest.data.RF$Phase_1_death_prediction <- pred.RF.M.1[,1]
+nest.data.RF$Phase_1_death_prediction <- pred.RF.M.1.1[,1]
 ggplot(data = nest.data.RF) +
-  geom_point(aes(x = Phase_1_death, y = Phase_1_death_prediction)) + 
+  geom_point(aes(x = Phase_1_death, 
+                 y = Phase_1_death_prediction)) + 
   geom_abline(slope = 1.0, intercept = 0.0) + 
   ylim(c(0, 1)) + 
   labs(x = "Observed phase 1 death", 
        y = "Predicted phase 1 death")
 
+#ggsave(filename = "figures/RF_M1_prediction.png", device = "png", dpi = 600)
 ```
+
+
+
+```{r}
+rp.importance(rfP.M.1)
+```
+
+
+
 
 This doesn't look so good... There is a positive relationship but not very strong... 
 
@@ -487,6 +562,9 @@ M.2 <- as.formula("rate_success ~ scaled_Dist_Berm +
                   log.pred.nest.elev.2.5.45d + 
                   log.pred.nest.elev.97.5.45d +
                   dif_nest_pred +
+                  Year +
+                  Northings2 +
+                  Eastings2 +
                   RV")
 
 if (!file.exists("RData/RF_M_2_out.rds")){
