@@ -368,13 +368,11 @@ ggplot() +
 
 Residuals look not great - non-linearity is evident. 
 
-
 Second order polynomial with month-specific intercept and coefficients for the distance plus year effect:
 
 mu.y[i] <- b0[month[i]] + b1[month[i]] * Dist_Berm[i] + b12[month[i]] * Dist_Berm[i] * Dist_Berm[i] + b2 * year[i]
 
 y[i] ~ dnorm(mu.y[i], tau.y)  
-
 
 ```{r}
 MCMC.params$model.file = "models/Model_Poly2_month_year.txt"
@@ -459,7 +457,98 @@ ggplot() +
 ```
 
 
-It looks okay but ...Of course... the 2nd order polynomial has to increase at the end, which may not be a good feather in this case. 
+It looks okay but ...Of course... the 2nd order polynomial has to increase at the end, which may not be a good feature in this case. 
+
+Another 2nd order polynomial with month/year specific intercept.
+
+mu.y[i] <- b0[month[i], year[i]] + b1[month[i]] * Dist_Berm[i] + b12[month[i]] * Dist_Berm[i] * Dist_Berm[i]
+		
+y[i] ~ dnorm(mu.y[i], tau.y)  
+		
+```{r}
+MCMC.params$model.file = "models/Model_Poly2_1_month_year.txt"
+
+parameters <- c("b0", "b1", "b12", "sigma.y",
+                "fit", "fit.new", "deviance")
+
+if (!file.exists("RData/Poly2_1_month_year.rds")){
+  jm.2_1 <- jags(data = jags.data.exp,
+               #inits = inits,
+               parameters.to.save= parameters,
+               model.file = MCMC.params$model.file,
+               n.chains = MCMC.params$n.chains,
+               n.burnin = MCMC.params$n.burnin,
+               n.thin = MCMC.params$n.thin,
+               n.iter = MCMC.params$n.samples,
+               DIC = T, 
+               parallel=T)
+  
+  saveRDS(jm.2_1, file = "RData/Poly2_1_month_year.rds")  
+} else {
+  jm.2_1 <- readRDS("RData/Poly2_1_month_year.rds")
+}
+
+summary(jm.2_1)  
+```
+
+And density plots: First year
+```{r}
+# check some posteriors
+mcmc_dens(jm.2_1$samples, pars = c("b0[1,1]", "b0[2,1]", "b0[3,1]", "b0[4,1]", 
+                                  "b0[5,1]", "b0[6,1]", "b0[7,1]"))
+
+```
+
+Second year:
+
+```{r}
+# check some posteriors
+mcmc_dens(jm.2_1$samples, pars = c("b0[1,2]", "b0[2,2]", "b0[3,2]", "b0[4,2]", 
+                                  "b0[5,2]", "b0[6,2]", "b0[7,2]"))
+
+```
+
+First-order coefficients:
+
+```{r}
+mcmc_dens(jm.2_1$samples, pars = c("b1[1]", "b1[2]", "b1[3]", "b1[4]",
+                                "b1[5]", "b1[6]", "b1[7]"))
+
+```
+
+Second order coefficients
+
+```{r}
+
+mcmc_dens(jm.2_1$samples, pars = c("b12[1]", "b12[2]", "b12[3]", "b12[4]",
+                                "b12[5]", "b12[6]", "b12[7]"))
+```
+
+Extract the posterior samples and create plots
+```{r}
+pred.list.jm.2_1 <- extract.prediction.poly2.1(zm = jm.2_1, jags.data = jags.data.exp)
+
+pred.list.jm.2_1$pred.df %>% 
+  mutate(Month = ifelse(Month2 < 4, Month2 + 9, Month2 - 3),
+         Month_f = factor(Month, 
+                          levels = c("10", "11", "12", "1", "2", "3", "4"))) -> pred.df.jm.2_1
+
+pred.df.jm.2_1 %>% filter(Year == 2018) -> pred.df.jm.2_1.2018
+ggplot() + 
+  geom_point(data = inund,
+             aes(x = scaled_Dist_Berm,
+                 y = log(InundHeight_AbvLAT))) +
+  geom_path(data = pred.df.jm.2_1,
+            aes(x = Dist_Berm,
+                 y = (pred_med))) +
+  geom_ribbon(data = pred.df.jm.2_1,
+              aes(x = Dist_Berm,
+                  ymin = (pred_low),
+                  ymax = (pred_high)),
+              alpha = 0.5) +
+  facet_grid(Year ~ Month_f)  
+
+```
 
 3-rd order polynomial (why not?) 
 
@@ -530,7 +619,7 @@ mcmc_dens(jm.3$samples, pars = "b2")
 Predict:
 
 ```{r}
-# need a newe function to extract appropriate posteriors.
+# need a new function to extract appropriate posteriors.
 pred.list.jm.3 <- extract.prediction.poly3(zm = jm.3, jags.data = jags.data.exp)
 
 pred.list.jm.3$pred.df %>% 
@@ -725,9 +814,9 @@ ggplot() +
 ```
 
 
-DIC is best for jm.2 (2nd order polynomial).   
+DIC is best for jm.2_1 (2nd order polynomial with month/year intercepts).   
 ```{r}
-c(jm.1$DIC, jm.2$DIC, jm.3$DIC, jm.4$DIC, jm.5$DIC)
+c(jm.1$DIC, jm.2$DIC, jm.2_1$DIC, jm.3$DIC, jm.4$DIC, jm.5$DIC)
 ```
 
 

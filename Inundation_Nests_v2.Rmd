@@ -3,7 +3,7 @@ title: "R Notebook"
 output: html_notebook
 ---
 
-In this Notebook, I use the second-order polynomial function fitted to the inundation data in Inundation_v2.Rmd to evaluate probabilities of inundation for nests. This version (v1.1) computes new measures:
+In this Notebook, I use the second-order polynomial function fitted to the inundation data in Inundation_v2.Rmd to evaluate probabilities of inundation for nests. This version (v.2) computes new measures:
 
 1. Compute proportions of phase-1 deaths (Yes, and to adjust proportion (%) of phase 1 deaths from % of failed eggs to % of total eggs recovered for each nest) for all nests. Then look at how they are affected by the inundation line for the first 30 days of incubation. I'm envisioning this to be plots similar to the last ones but change the hatch success to proportion of phase-1 deaths.
 
@@ -125,7 +125,9 @@ MCMC.params <- list(n.samples = 10000,
                     n.burnin = 5000,
                     n.thin = 5,
                     n.chains = 5,
-                    model.file = "models/Model_Poly2_1_month_year.txt")
+                    model.file = "models/Model_Poly2_1_month_year.txt") 
+
+#model.file = "models/Model_Poly2_month_year.txt")
 
 parameters <- c("b0", "b1", "b2", "b12", "sigma.y",
                  "fit", "fit.new", "deviance")
@@ -388,20 +390,17 @@ ggplot() +
 ```
 
 
-
 ```{r}
-
 
 ggplot(nest.data.30d) + 
   geom_point(aes(x = dif.nest.pred,
                  y = Phase_1_death))
 
-
 ```
 
 There is no obvious pattern... 
 
-Can we predict Phase_1_death with all possible variables?
+Can we predict Phase_1_death with all possible variables using random forest?
 
 ```{r}
 ntree <- 500
@@ -464,7 +463,7 @@ ggplot(data = var.imp.df) +
         axis.title.x = element_text(size =12))
 ```
 
-Difference in nest height and predicted inundation level and nest elevation are important. There are several variables that were less important than random numbers. So, remove them and rerun (although unnecessary...).
+Difference in nest height and nest elevations are important. 
 
 ```{r}
 M.1.1 <- as.formula("Phase_1_death ~ scaled_Dist_Berm + 
@@ -518,8 +517,6 @@ ggplot(data = var.imp.df) +
 
 #ggsave(filename = "figures/varImp_RF_M1.png", device = "png", dpi = 600)
 ```
-
-
 
 Compare the data and predictions:
 
