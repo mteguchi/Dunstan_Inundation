@@ -132,14 +132,14 @@ MCMC.params <- list(n.samples = 10000,
 parameters <- c("b0", "b1", "b2", "b12", "sigma.y",
                  "fit", "fit.new", "deviance")
 
-jm.2 <- readRDS("RData/Poly2_1_month_year.rds")
+jm.2_1 <- readRDS("RData/Poly2_1_month_year.rds")
 
 ```
 
 
 Extract the posterior samples and create plots
 ```{r}
-pred.list.jm.2 <- extract.prediction.poly2.1(zm = jm.2, 
+pred.list.jm.2 <- extract.prediction.poly2.1(zm = jm.2_1, 
                                            jags.data = jags.data)
 
 pred.list.jm.2$pred.df %>% 
@@ -148,31 +148,28 @@ pred.list.jm.2$pred.df %>%
                           levels = c("10", "11", "12", 
                                      "1", "2", "3", "4"))) -> pred.df.jm.2
 
-ggplot() + 
+p.1 <- ggplot() + 
    geom_point(data = nest.data,
               aes(x = scaled_Dist_Berm,
-                  y = (Nest_Elevation),
+                  y = log(Nest_Elevation),
                   color = Phase_1_death),
               alpha = 0.5) +
   geom_point(data = inund,
              aes(x = scaled_Dist_Berm,
-                 y = (InundHeight_AbvLAT)),
+                 y = log(InundHeight_AbvLAT)),
              color = "red") +
   geom_path(data = pred.df.jm.2,
             aes(x = Dist_Berm,
-                 y = exp(pred_med))) +
+                 y = (pred_med))) +
   geom_ribbon(data = pred.df.jm.2,
               aes(x = Dist_Berm,
-                  ymin = exp(pred_low),
-                  ymax = exp(pred_high)),
+                  ymin = (pred_low),
+                  ymax = (pred_high)),
               alpha = 0.5) +
   facet_grid(Year ~ Month_f) + 
-  labs(title = "Date laid + Phase 1")
+  labs(title = "Predicted inundation height and phase 1 deaths")
 
-# ggsave(filename = "figures/poly2_success.png",
-#        dpi = 600, device = "png",
-#        height = 3.53, width = 5.73)
-
+p.1
 ```
 
 There may be some patterns of high phase 1 mortality below regression lines? Let's try measuring the distance between each nest and the regression line.
@@ -210,7 +207,7 @@ nest.data %>% select(Month2, Year, scaled_Dist_Berm) %>%
   mutate(Year = ifelse(Year == 2018, 1, 2),
          Month = Month2) -> new.data
 
-pred.data <- predict.poly2.1(zm = jm.2, new.data = new.data)
+pred.data <- predict.poly2.1(zm = jm.2_1, new.data = new.data)
 
 pred.data$qtiles %>% transmute(log.pred.inund.elev.50 = X50.,
                                log.pred.inund.elev.2.5 = X2.5.,
@@ -226,14 +223,28 @@ pred.data$qtiles %>% transmute(log.pred.inund.elev.50 = X50.,
 #write.csv(nest.data.2, file = "data/nest_inund_prediction.csv")
 
 ggplot(nest.data.2) + 
-  geom_errorbar(aes(x = Nest_Elevation,
+  geom_errorbar(aes(x = Berm_Dist,
                     ymin = pred.inund.elev.2.5,
                     ymax = pred.inund.elev.97.5)) +
-  geom_point(aes(x = Nest_Elevation,
+  geom_point(aes(x = Berm_Dist,
                  y = pred.inund.elev,
-                 color = Month_f)) 
+                 color = rate_success,
+                 shape = as.factor(Year))) 
 
 ```
+
+```{r}
+ggplot(nest.data.2) + 
+  geom_errorbar(aes(x = scaled_Dist_Berm,
+                    ymin = dif.nest.pred.2.5,
+                    ymax = dif.nest.pred.97.5)) +
+  geom_point(aes(x = scaled_Dist_Berm,
+                 y = dif.nest.pred,
+                 color = rate_success)) 
+
+```
+
+
 
 Look at time lag:
 
@@ -291,7 +302,7 @@ nest.data.30d %>%
   mutate(Year = ifelse(Year == 2018, 1, 2),
          Month = Month2) -> new.data.30d
 
-pred.data.30d <- predict.poly2.1(zm = jm.2, new.data = new.data.30d)
+pred.data.30d <- predict.poly2.1(zm = jm.2_1, new.data = new.data.30d)
 
 pred.data.30d$qtiles %>% transmute(log.pred.nest.elev.50 = X50.,
                                    log.pred.nest.elev.2.5 = X2.5.,
@@ -317,7 +328,7 @@ nest.data.45d %>% select(Month2, Year, scaled_Dist_Berm) %>%
   mutate(Year = ifelse(Year == 2018, 1, 2),
          Month = Month2) -> new.data.45d
 
-pred.data.45d <- predict.poly2.1(zm = jm.2, new.data = new.data.45d)
+pred.data.45d <- predict.poly2.1(zm = jm.2_1, new.data = new.data.45d)
 
 pred.data.45d$qtiles %>% transmute(log.pred.nest.elev.50 = X50.,
                                    log.pred.nest.elev.2.5 = X2.5.,
