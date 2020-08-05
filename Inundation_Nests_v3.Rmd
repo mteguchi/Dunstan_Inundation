@@ -11,6 +11,11 @@ In this Notebook, I use the second-order polynomial function fitted to the inund
 
 Yep, that’d be great and yes, for max inundation heights for each of the 3 months post laying. These curves look good.
 
+For this version (v.3), I try to fulfill the following request from Owen Coffee (2020-08-04):
+
+"The updated inundation logger .csv now contains the inundation heights for all highs in a month above the median (each max in the tidal cycle + ~ 2 days either side) not just the max as was previously used. As you have said, bottom/mid/complete can be calculated from each individual nest depth so really the difference in the analysis is now not just determining inundation from the max monthly high for each incubation month, but how many of the identified highs above median for each month (1st, 2nd and 3rd month of incubation) would correspond with each of bottom/mid/complete inundation for the considered nests. The hope would then be to estimate the total period immersed for each of those inundation events from what Andy is working on, and then whether the timing (early/mid/late development), frequency or period of inundation correlates with clutch mortality."
+
+I'm still unclear on exactly what he's asking... but looking at the data may help. 
 
 Load essential libraries first.
 
@@ -31,21 +36,22 @@ source("Dunstan_Inundation_fcns.R")
 And load the data.
 
 ```{r}
-
+#Transect,Post,Date,Time,Aspect,Survey Date,Inundation Month,Dist_from_Berm,Beach_Elevation,Inund_Height
 inund.cols <- cols(
    Transect = col_double(),
    Post = col_double(),
-   InundHeight_AbvLAT = col_double(),
-   Dist_Berm = col_double(),
-   Berm_elevation = col_double(),
-   BermSurvey_Month = col_character(),
-   Inund_Month = col_character(),
    Date = col_date(format = "%d/%m/%Y"),
-   Time = col_time(format = "%H:%M:%S %p"))
+   Time = col_time(format = "%H:%M:%S %p"),
+   Aspect = col_character(),
+   Survey_Date = col_character(),
+   Inundation_Month = col_character(),
+   Dist_from_Berm = col_double(),
+   Beach_Elevation = col_double(),
+   Inund_Height = col_double())
 
-inund <- read_csv("data/inundationRaine.csv", col_types = inund.cols)
-min.Dist <- min(inund$Dist_Berm)
-sd.Dist <- sqrt(var(inund$Dist_Berm))
+inund <- read_csv("data/inundationRaine_abovemedian.csv", col_types = inund.cols)
+min.Dist <- min(inund$Dist_from_Berm)
+sd.Dist <- sqrt(var(inund$Dist_from_Berm))
 
 inund %>% mutate(Year = ifelse(Date < as.Date("2018-05-01"), 2018, 2019)) %>%
   mutate(Month = month(Date)) %>%
@@ -55,8 +61,8 @@ inund %>% mutate(Year = ifelse(Date < as.Date("2018-05-01"), 2018, 2019)) %>%
          Month2 = ifelse(Month > 9, Month - 9, Month + 3),
          Month_f = factor(Month, levels = c("10", "11", "12", "1", "2", "3", "4")),
          Transect2 = Transect - 1,
-         log_inund = log(InundHeight_AbvLAT),
-         scaled_Dist_Berm = (Dist_Berm - min.Dist)/sd.Dist) -> inund
+         log_inund = log(Inund_Height),
+         scaled_Dist_Berm = (Dist_from_Berm - min.Dist)/sd.Dist) -> inund
 
 inund.2018 <- filter(inund, Year == 2018)
 inund.2019 <- filter(inund, Year == 2019)
@@ -65,11 +71,13 @@ inund.2019 <- filter(inund, Year == 2019)
 # Replaced Feb-18 with 15/02/2018 (TE, 2020-03-19)
 # Replaced Dec-18 with 15/12/2018 (TE, 2020-03-19)
 # Replaced Feb-20 with 15/02/2020 (TE, 2020-03-19)
+#fid,Nest_UID,Northings,Eastings,Aspect,Nest_Elevation,Berm_Dist,Date_laid,Date_dug,Sector,Habitat,Hatched,Live_hatchlings,Dead_hatchlings,Phase_1,Phase_2,Phase_3,Phase_4,Phase_5,Phase_6,Decomposed,Total_unhatched,Total_clutch,rate_success,Season_Peakpop
 
 nest.cols <- cols(fid = col_integer(), 
                   Nest_UID = col_character(), 
                   Northings = col_double(), 
                   Eastings = col_double(), 
+                  Aspect = col_character(),
                   Nest_Elevation = col_double(),
                   Berm_Dist = col_double(),
                   Date_laid = col_date(format = "%d/%m/%Y"),
@@ -88,10 +96,11 @@ nest.cols <- cols(fid = col_integer(),
                   Decomposed = col_integer(),
                   Total_unhatched = col_integer(),
                   Total_clutch = col_integer(),
-                  rate_success = col_double())
+                  rate_success = col_double(),
+                  Season_Peakpop = col_integer())
 
 # the following file was created from revised data from Owen Coffee (nest_inund_prediction_OCedits.csv).
-nest.data <- read_csv("data/hatchsuccess_inund_TE_2020-04-16.csv", 
+nest.data <- read_csv("data/hatchsuccess_inund.csv", 
                       col_types = nest.cols)
 
 nest.data %>% mutate(Year = ifelse(Date_laid < as.Date("2018-05-01"), 2018, 2019)) %>%
@@ -156,7 +165,7 @@ p.1 <- ggplot() +
               alpha = 0.5) +
   geom_point(data = inund,
              aes(x = scaled_Dist_Berm,
-                 y = log(InundHeight_AbvLAT)),
+                 y = log_inund),
              color = "red") +
   geom_path(data = pred.df.jm.2,
             aes(x = Dist_Berm,
@@ -168,6 +177,9 @@ p.1 <- ggplot() +
               alpha = 0.5) +
   facet_grid(Year ~ Month_f) + 
   labs(title = "Predicted inundation height and phase 1 deaths")
+
+# ggsave(plot = p.1, filename = "figures/inundation_phase1_2020-08-05.png",
+#        device = "png", dpi = 600)
 
 p.1
 ```
@@ -184,7 +196,7 @@ ggplot() +
               alpha = 0.5) +
   geom_point(data = inund,
              aes(x = scaled_Dist_Berm,
-                 y = (InundHeight_AbvLAT)),
+                 y = (Inund_Height)),
              color = "red") +
   geom_path(data = pred.df.jm.2,
             aes(x = Dist_Berm,
@@ -380,7 +392,7 @@ ggplot() +
               alpha = 0.5) +
   geom_point(data = inund,
              aes(x = scaled_Dist_Berm,
-                 y = log(InundHeight_AbvLAT)),
+                 y = log(Inund_Height)),
              color = "red") +
   geom_path(data = pred.df.jm.2,
             aes(x = Dist_Berm,
