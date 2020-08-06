@@ -1,3 +1,10 @@
+
+std_dist_berm <- function(x){
+  out <- (x - min(x))/sqrt(var(x))
+  return(out)
+}
+
+
 # a function to extract posterior samples from jags output
 extract.samples <- function(varname, zm){
   dev <- unlist(lapply(zm, FUN = function(x) x[, varname]))
