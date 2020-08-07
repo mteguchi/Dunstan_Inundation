@@ -1,0 +1,711 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Request from Andy Dunstan on the following problem.
+
+Email from AD on Feb 24, 2020:
+
+Here is another query for your advice if you have the time and inclination – much appreciated if you do. It’s another one of those limited data situations where there is a good time series but limited number of logger locations available. Am wondering if this may suit a statistical model similar to the limited sample data points available for hatchling counts?
+
+We wish to determine a best fit maximum inundation curve (berm to back swale across the beach) for months of Dec, Jan, Feb and March if possible. At the moment the model used is the best fit regression curve from peak inundation data at each logger location. The distance of logger locations from the berm does change with island shifts and changes to the berm over season and years and has been measured with dGPS surveys. This provides a range of slightly different logger-berm distance points to use and hopefully increases the confidence levels in a calculated curve. However …. am hoping there may be a better method to fit the curve and provide confidence limits or if this is indeed the best model then a good suggestion for statistical justification of this curve?
+
+This curve would then be correlated with nest locations (distance from berm) and elevations (calculated from the curve where x-axis is distance from berm) to infer inundation from the curve. (eg. Above top of nest, marginal to level of middle of nest or no inundation as three categories). Data suggests some variation in inundation curve profiles around the island at the four different transects however not too radical. There is a definite outlier to this in the NW (mooring) beach area when Westerly winds have lowered the berm and peak tide levels are above this berm height resulting in inundation across the entire beach width – can be treated separately.
+
+End of AD's email.
+
+Additionally, the original request is from Owen Coffee:
+
+The intention in this workbook is to define a predicted monthly max inundation curve for the whole of island based on the inundation data from the loggers at the 4 transects around the beach. At present the produced predicted curves are the log. Regression of the max inundation points for each month ± a 95% conf. interval. The relationships between the curves however are variable which look to be related to sample size and variation between sectors. Having defined these predicted inundation curves the marked nests are then plotted against these predictions and any nest with the 95% conf. interval or below the inundation height is predicted to have been inundated. The intention is then to review the hatching success and development phases of failed eggs for these nests identified as inundated to determine whether the predicted inundation events correlate with the phases of failed eggs.
+
+Any comments/suggestions on improvements in determining the best regression model to fit the different months or potentially an improved method to define a predicted monthly max inundation curve which allows smoothing of the produced curve, and whether it possible to automate the identification of inundated nests (as this process is currently manual) would be greatly appreciated.
+
+End of OC's email
+
+In this version (v.4), not just the high tide but "above median" tides were included in this analysis. OC's email on 2020-08-05:
+
+"The original model was based on the highest recorded for the month, and operated on a flawed assumption that only an extreme high would have been sufficient to inundate nests. The consequent produced curve was estimating only that one events inundation height along the beach profile for the whole island for those sections on the beach profile where we didn't have an inundation logger. But it wasn't able to estimate the height on days we didn't have the data which is why the new working file has all highs above the median for each month."
+
+A new data file was sent and I'm using the new input file for this analysis.
+
+After a conversation with OC on 2020-08-06, I realized my understanding of his intentions was incorrect. He wanted to have two sets of model fit for each month, where each set is based on 5-6 days of water level data. This may require a little bit of tweaking in my models. Let's take a look at the data first and see what they look like.
+
+Load essential libraries first.
+
+```{r}
+rm(list=ls())
+library(ggplot2)
+library(tidyverse)
+library(readr)
+library(lubridate)
+library(jagsUI)
+library(bayesplot)
+
+source("Dunstan_Inundation_fcns.R")
+```
+
+And load the data.
+
+Remove transect 2 as per discussion on 2020-03-16 (US Westcoast time).
+First, transform some variables:
+
+```{r}
+
+inund.cols <- cols(
+   Transect = col_double(),
+   Post = col_double(),
+   Date = col_date(format = "%d/%m/%Y"),
+   Time = col_time(format = "%H:%M:%S %p"),
+   Aspect = col_character(),
+   Survey_Date = col_character(),
+   Inundation_Month = col_character(),
+   Dist_from_Berm = col_double(),
+   Beach_Elevation = col_double(),
+   Inund_Height = col_double())
+
+inund <- read_csv("data/inundationRaine_abovemedian.csv", col_types = inund.cols)
+
+inund %>% filter(Transect != 2) %>%
+  mutate(Transect_f = as.factor(Transect),
+         Year = ifelse(Date < as.Date("2018-05-01"), 2018, 2019),
+         Year2 = ifelse(Year == 2018, 1, 2),
+         Transect2 = Transect - 1,
+         log_inund = log(Inund_Height)) %>% 
+  arrange(Date)-> inund
+
+# define datasets by looking at difference in consecutive dates.
+dt <- as.numeric(inund$Date[2:length(inund$Date)] - inund$Date[1:(length(inund$Date)-1)])
+inund$dt <- c(0, dt)
+inund$datsetID <- cumsum(ifelse(inund$dt < 2, 0, 1)) + 1
+
+# Datasets are defined by how data are combined among close dates. So, sometimes, they go over two
+# months. These have to be assigned to the same month as the first data point of the particular
+# dataset.
+inund %>% group_by(datsetID) %>%
+  mutate(Month = month(nth(Date, 3)),
+         Month2 = ifelse(Month > 9, Month - 9, Month + 3),
+         Month_f = factor(Month, levels = c("10", "11", "12", "1", "2", "3", "4"))) -> inund
+
+```
+
+Explore data with making some plots. In the previous data exploiration, I found that variability among transects is quite small. So, I can pool them to model. 
+
+
+```{r}
+#tmp <- filter(inund, Month == 11)
+ggplot() + 
+  geom_point(data = inund,
+             aes(x = Dist_from_Berm,
+                 y = Inund_Height,
+                 color = as.factor(datsetID))) +
+  facet_grid(Year ~ Month_f) +
+  theme(legend.position = "none")
+```
+START HERE ON 2020-08-07
+
+I decided to fit a few polynomial functions and the exponential decay function with month and year specific intercepts but month-specific coefficients for the distance from the berm. This allows us to shift the intercept between the years whereas treat data for two years together to compute how the inundation height decreases as the distance increases. 
+
+To minimize the possibility of exploding multiplications, I transformed the distance from the berm in the following way:
+
+scaled_Dist_from_Berm = (Dist_from_Berm - min.Dist)/sd.Dist,
+
+where min.Dist is the minimum distance in Dist_from_Berm (two years combined) and sd.Dist is
+the standard deviation of all Dist_from_Berm values (two years combined). 
+
+The response variable (Inund_Height) is log transformed. 
+
+The first model is a simple linear model; 
+
+mu.y[i] <- b0[month[i]] + b1[month[i]] * Dist_from_Berm[i] + b2 * year[i]
+
+y[i] ~ dnorm(mu.y[i], tau.y)  
+
+```{r}
+# I re-scale the distance from the berm, in order to make the
+# exponentiation not blow up. 
+
+jags.data <- list(y = inund$log_inund,
+                  month = inund$Month2,
+                  Dist_Berm = std_dist_berm(inund$Dist_from_Berm),
+                  year = inund$Year2,
+                  N = nrow(inund),
+                  n.months = length(unique(inund$Month2)),
+                  n.years = length(unique(inund$Year2)))
+
+MCMC.params <- list(n.samples = 10000,
+                    n.burnin = 5000,
+                    n.thin = 5,
+                    n.chains = 5)
+
+parameters <- c("b0", "b1", "b2", "sigma.y", 
+                 "fit", "fit.new","deviance")
+
+MCMC.params$model.file = "models/Model_linear_month_year.txt"
+
+if (!file.exists("RData/linear_month_year_aboveMed.rds")){
+  jm.1 <- jags(data = jags.data,
+               #inits = inits,
+               parameters.to.save= parameters,
+               model.file = MCMC.params$model.file,
+               n.chains = MCMC.params$n.chains,
+               n.burnin = MCMC.params$n.burnin,
+               n.thin = MCMC.params$n.thin,
+               n.iter = MCMC.params$n.samples,
+               DIC = T, 
+               parallel=T)
+  
+  saveRDS(jm.1, file = "RData/linear_month_year_aboveMed.rds")  
+} else {
+  jm.1 <- readRDS("RData/linear_month_year_aboveMed.rds")
+}
+
+summary(jm.1)  
+```
+
+The Rhat statistics indicated good conversion of the MCMC samples. Look at some posteriors. 
+Slope parameters. These are indexed from 1 to 7, which correspond to Oct through April. 
+
+
+```{r}
+# check some posteriors
+mcmc_dens(jm.1$samples, pars = c("b0[1]", "b0[2]", "b0[3]", "b0[4]",
+                                  "b0[5]", "b0[6]", "b0[7]"))
+```
+
+Slight differences among them but not too much. We may try to have just one intercept later. 
+
+Slope parameters also are month-specific:
+
+And their density plots:
+```{r}
+mcmc_dens(jm.1$samples, pars = c("b1[1]", "b1[2]", "b1[3]", "b1[4]", 
+                                  "b1[5]", "b1[6]", "b1[7]"))
+
+```
+
+These look different enough? Dec, March, and April are different from the rest.  
+
+Finally, the coefficient for the year.
+
+```{r}
+mcmc_dens(jm.1$samples, pars = c("b2"))
+
+```
+
+Mostly negative... the intercepts were lower for 2019 than 2018.
+
+Let's take a look at how a constant intercept model would work.
+
+```{r}
+
+parameters <- c("b0", "b1", "b2", "sigma.y", 
+                 "fit", "fit.new","deviance")
+
+MCMC.params$model.file = "models/Model_linear_month_year_OneB0.txt"
+
+if (!file.exists("RData/linear_month_year_OneB0_aboveMed.rds")){
+  jm.1.1 <- jags(data = jags.data,
+                 #inits = inits,
+                 parameters.to.save= parameters,
+                 model.file = MCMC.params$model.file,
+                 n.chains = MCMC.params$n.chains,
+                 n.burnin = MCMC.params$n.burnin,
+                 n.thin = MCMC.params$n.thin,
+                 n.iter = MCMC.params$n.samples,
+                 DIC = T, 
+                 parallel=T)
+  
+  saveRDS(jm.1.1, file = "RData/linear_month_year_OneB0_aboveMed.rds")  
+} else {
+  jm.1.1 <- readRDS("RData/linear_month_year_aboveMed.rds")
+}
+
+summary(jm.1.1)  
+
+```
+
+A quick look of DIC values indicate that the first model (month-specific intercepts) is better than the one-intercept model.  So, I'll move on with the original model. 
+
+
+Extract the posterior samples and create plots. The extraction function is in Dunstan_inundation_fcns.R script. 
+```{r}
+pred.list.jm.1 <- extract.prediction.1(zm = jm.1, jags.data = jags.data)
+
+pred.list.jm.1$pred.df %>% 
+  mutate(Month = ifelse(Month2 < 4, Month2 + 9, Month2 - 3),
+         Month_f = factor(Month, 
+                          levels = c("10", "11", "12", "1", "2", "3", "4"))) -> pred.df.jm.1
+
+pred.df.jm.1 %>% filter(Year == 2018) -> pred.df.jm.1.2018
+ggplot() + 
+  geom_point(data = inund,
+             aes(x = std_dist_berm(Dist_from_Berm),
+                 y = log(Inund_Height))) +
+  geom_path(data = pred.df.jm.1,
+            aes(x = Dist_Berm,
+                 y = (pred_med))) +
+  geom_ribbon(data = pred.df.jm.1,
+              aes(x = Dist_Berm,
+                  ymin = (pred_low),
+                  ymax = (pred_high)),
+              alpha = 0.5) +
+  facet_grid(Year ~ Month_f)  
+
+```
+
+
+Residuals look not great - non-linearity is evident. 
+
+Second order polynomial with month-specific intercept and coefficients for the distance plus year effect:
+
+mu.y[i] <- b0[month[i]] + b1[month[i]] * Dist_from_Berm[i] + b12[month[i]] * Dist_from_Berm[i] * Dist_from_Berm[i] + b2 * year[i]
+
+y[i] ~ dnorm(mu.y[i], tau.y)  
+
+```{r}
+MCMC.params$model.file = "models/Model_Poly2_month_year.txt"
+
+parameters <- c("b0", "b1", "b2", "b12", "sigma.y",
+                 "fit", "fit.new", "deviance")
+
+if (!file.exists("RData/Poly2_month_year_aboveMed.rds")){
+  jm.2 <- jags(data = jags.data,
+               #inits = inits,
+               parameters.to.save= parameters,
+               model.file = MCMC.params$model.file,
+               n.chains = MCMC.params$n.chains,
+               n.burnin = MCMC.params$n.burnin,
+               n.thin = MCMC.params$n.thin,
+               n.iter = MCMC.params$n.samples,
+               DIC = T, 
+               parallel=T)
+  
+  saveRDS(jm.2, file = "RData/Poly2_month_year_aboveMed.rds")  
+} else {
+  jm.2 <- readRDS("RData/Poly2_month_year_aboveMed.rds")
+}
+
+summary(jm.2)  
+```
+
+
+And density plots:
+```{r}
+# check some posteriors
+mcmc_dens(jm.2$samples, pars = c("b0[1]", "b0[2]", "b0[3]", "b0[4]", 
+                                  "b0[5]", "b0[6]", "b0[7]"))
+
+```
+
+First-order coefficients:
+
+```{r}
+mcmc_dens(jm.2$samples, pars = c("b1[1]", "b1[2]", "b1[3]", "b1[4]",
+                                "b1[5]", "b1[6]", "b1[7]"))
+
+```
+
+Second order coefficients
+
+```{r}
+
+mcmc_dens(jm.2$samples, pars = c("b12[1]", "b12[2]", "b12[3]", "b12[4]",
+                                "b12[5]", "b12[6]", "b12[7]"))
+```
+
+And the year effect:
+```{r}
+mcmc_dens(jm.2$samples, pars = c("b2"))
+```
+
+Extract the posterior samples and create plots
+```{r}
+pred.list.jm.2 <- extract.prediction.poly2(zm = jm.2, jags.data = jags.data)
+
+pred.list.jm.2$pred.df %>% 
+  mutate(Month = ifelse(Month2 < 4, Month2 + 9, Month2 - 3),
+         Month_f = factor(Month, 
+                          levels = c("10", "11", "12", "1", "2", "3", "4"))) -> pred.df.jm.2
+
+pred.df.jm.2 %>% filter(Year == 2018) -> pred.df.jm.2.2018
+ggplot() + 
+  geom_point(data = inund,
+             aes(x = std_dist_berm(Dist_from_Berm),
+                 y = log(Inund_Height))) +
+  geom_path(data = pred.df.jm.2,
+            aes(x = Dist_Berm,
+                 y = (pred_med))) +
+  geom_ribbon(data = pred.df.jm.2,
+              aes(x = Dist_Berm,
+                  ymin = (pred_low),
+                  ymax = (pred_high)),
+              alpha = 0.5) +
+  facet_grid(Year ~ Month_f)  
+
+```
+
+
+It looks okay but ...Of course... the 2nd order polynomial has to increase at the end, which may not be a good feature in this case. 
+
+Another 2nd order polynomial with month/year specific intercept.
+
+mu.y[i] <- b0[month[i], year[i]] + b1[month[i]] * Dist_from_Berm[i] + b12[month[i]] * Dist_from_Berm[i] * Dist_from_Berm[i]
+		
+y[i] ~ dnorm(mu.y[i], tau.y)  
+		
+```{r}
+MCMC.params$model.file = "models/Model_Poly2_1_month_year.txt"
+
+parameters <- c("b0", "b1", "b12", "sigma.y",
+                "fit", "fit.new", "deviance")
+
+if (!file.exists("RData/Poly2_1_month_year_aboveMed.rds")){
+  jm.2_1 <- jags(data = jags.data,
+               #inits = inits,
+               parameters.to.save= parameters,
+               model.file = MCMC.params$model.file,
+               n.chains = MCMC.params$n.chains,
+               n.burnin = MCMC.params$n.burnin,
+               n.thin = MCMC.params$n.thin,
+               n.iter = MCMC.params$n.samples,
+               DIC = T, 
+               parallel=T)
+  
+  saveRDS(jm.2_1, file = "RData/Poly2_1_month_year_aboveMed.rds")  
+} else {
+  jm.2_1 <- readRDS("RData/Poly2_1_month_year_aboveMed.rds")
+}
+
+summary(jm.2_1)  
+```
+
+And density plots: First year
+```{r}
+# check some posteriors
+mcmc_dens(jm.2_1$samples, pars = c("b0[1,1]", "b0[2,1]", "b0[3,1]", "b0[4,1]", 
+                                  "b0[5,1]", "b0[6,1]", "b0[7,1]"))
+
+```
+
+Second year:
+
+```{r}
+# check some posteriors
+mcmc_dens(jm.2_1$samples, pars = c("b0[1,2]", "b0[2,2]", "b0[3,2]", "b0[4,2]", 
+                                  "b0[5,2]", "b0[6,2]", "b0[7,2]"))
+
+```
+
+First-order coefficients:
+
+```{r}
+mcmc_dens(jm.2_1$samples, pars = c("b1[1]", "b1[2]", "b1[3]", "b1[4]",
+                                "b1[5]", "b1[6]", "b1[7]"))
+
+```
+
+Second order coefficients
+
+```{r}
+
+mcmc_dens(jm.2_1$samples, pars = c("b12[1]", "b12[2]", "b12[3]", "b12[4]",
+                                "b12[5]", "b12[6]", "b12[7]"))
+```
+
+Extract the posterior samples and create plots
+```{r}
+pred.list.jm.2_1 <- extract.prediction.poly2.1(zm = jm.2_1, jags.data = jags.data)
+
+pred.list.jm.2_1$pred.df %>% 
+  mutate(Month = ifelse(Month2 < 4, Month2 + 9, Month2 - 3),
+         Month_f = factor(Month, 
+                          levels = c("10", "11", "12", "1", "2", "3", "4"))) -> pred.df.jm.2_1
+
+pred.df.jm.2_1 %>% filter(Year == 2018) -> pred.df.jm.2_1.2018
+ggplot() + 
+  geom_point(data = inund,
+             aes(x = std_dist_berm(Dist_from_Berm),
+                 y = log(Inund_Height))) +
+  geom_path(data = pred.df.jm.2_1,
+            aes(x = Dist_Berm,
+                 y = (pred_med))) +
+  geom_ribbon(data = pred.df.jm.2_1,
+              aes(x = Dist_Berm,
+                  ymin = (pred_low),
+                  ymax = (pred_high)),
+              alpha = 0.5) +
+  facet_grid(Year ~ Month_f)  
+
+```
+
+3-rd order polynomial (why not?) 
+
+mu.y[i] <- b0[month[i]] + b1[month[i]] * Dist_from_Berm[i] + b12[month[i]] * Dist_from_Berm[i] * Dist_from_Berm[i] + b13[month[i]] * Dist_from_Berm[i] * Dist_from_Berm[i] * Dist_from_Berm[i] + b2 * year[i]
+
+y[i] ~ dnorm(mu.y[i], tau.y)  
+
+```{r}
+MCMC.params$model.file = "models/Model_Poly3_month_year.txt"
+
+parameters <- c("b0", "b1", "b2", "b12", "b13", 
+                 "fit", "fit.new","sigma.y", "deviance")
+
+if (!file.exists("RData/Poly3_month_year_aboveMed.rds")){
+  jm.3 <- jags(data = jags.data,
+               #inits = inits,
+               parameters.to.save= parameters,
+               model.file = MCMC.params$model.file,
+               n.chains = MCMC.params$n.chains,
+               n.burnin = MCMC.params$n.burnin,
+               n.thin = MCMC.params$n.thin,
+               n.iter = MCMC.params$n.samples,
+               DIC = T, 
+               parallel=T)
+  
+  saveRDS(jm.3, file = "RData/Poly3_month_year_aboveMed.rds")  
+} else {
+  jm.3 <- readRDS("RData/Poly3_month_year_aboveMed.rds")
+}
+
+summary(jm.3)  
+```
+
+Look at the posteriors. 
+
+Intercepts
+```{r}
+# check some posteriors
+mcmc_dens(jm.3$samples, pars = c("b0[1]", "b0[2]", "b0[3]", "b0[4]",
+                                  "b0[5]", "b0[6]", "b0[7]"))
+```
+
+First order coefficients:
+```{r}
+mcmc_dens(jm.3$samples, pars = c("b1[1]", "b1[2]", "b1[3]", "b1[4]",
+                                "b1[5]", "b1[6]", "b1[7]"))
+```
+
+Second order coefficients
+```{r}
+mcmc_dens(jm.3$samples, pars = c("b12[1]", "b12[2]", "b12[3]", "b12[4]",
+                                "b12[5]", "b12[6]", "b12[7]"))
+```
+
+Third order coefficients
+```{r}
+mcmc_dens(jm.3$samples, pars = c("b13[1]", "b13[2]", "b13[3]", "b13[4]",
+                                "b13[5]", "b13[6]", "b13[7]"))
+```
+
+Some are around zero... so the third order is probably not necessary. 
+
+The year effect
+```{r}
+mcmc_dens(jm.3$samples, pars = "b2")
+```
+
+Predict:
+
+```{r}
+# need a new function to extract appropriate posteriors.
+pred.list.jm.3 <- extract.prediction.poly3(zm = jm.3, jags.data = jags.data)
+
+pred.list.jm.3$pred.df %>% 
+  mutate(Month = ifelse(Month2 < 4, Month2 + 9, Month2 - 3),
+         Month_f = factor(Month, 
+                          levels = c("10", "11", "12", "1", "2", "3", "4"))) -> pred.df.jm.3
+
+pred.df.jm.3 %>% filter(Year == 2018) -> pred.df.jm.3.2018
+ggplot() + 
+  geom_point(data = inund,
+             aes(x = std_dist_berm(Dist_from_Berm),
+                 y = log(Inund_Height))) +
+  geom_path(data = pred.df.jm.3,
+            aes(x = Dist_Berm,
+                 y = (pred_med))) +
+  geom_ribbon(data = pred.df.jm.3,
+              aes(x = Dist_Berm,
+                  ymin = (pred_low),
+                  ymax = (pred_high)),
+              alpha = 0.5) +
+  facet_grid(Year ~ Month_f)  
+
+```
+
+It doesn't look like this does any better than the second order polynomial. 
+
+
+The exponential decay function.
+
+Because this function cannot have a year effect as in the polynomial case, I made the two coefficients month and year specific. 
+
+mu.y[i] <- b0[month[i], year[i]] * exp(-b1[month[i], year[i]] * Dist_from_Berm[i])
+
+y[i] ~ dnorm(mu.y[i], tau.y)  
+
+```{r}
+MCMC.params$model.file = "models/Model_exp_month_year.txt"
+
+parameters <- c("b0", "b1", "sigma.y", "fit", "fit.new", "deviance")
+
+if (!file.exists("RData/exp_month_year_aboveMed.rds")){
+  jm.4 <- jags(data = jags.data,
+               #inits = inits,
+               parameters.to.save= parameters,
+               model.file = MCMC.params$model.file,
+               n.chains = MCMC.params$n.chains,
+               n.burnin = MCMC.params$n.burnin,
+               n.thin = MCMC.params$n.thin,
+               n.iter = MCMC.params$n.samples,
+               DIC = T, 
+               parallel=T)
+
+  saveRDS(jm.4, file = "RData/exp_month_year_aboveMed.rds")  
+} else {
+  jm.4 <- readRDS("RData/exp_month_year_aboveMed.rds")
+}
+
+summary(jm.4)  
+```
+
+```{r}
+mcmc_dens(jm.4$samples, pars = c("b0[1,1]", "b0[2,1]", "b0[3,1]", "b0[4,1]",
+                                  "b0[5,1]", "b0[6,1]", "b0[7,1]"))
+```
+
+```{r}
+mcmc_dens(jm.4$samples, pars = c("b0[1,2]", "b0[2,2]", "b0[3,2]", "b0[4,2]",
+                                  "b0[5,2]", "b0[6,2]", "b0[7,2]"))
+```
+
+
+```{r}
+mcmc_dens(jm.4$samples, pars = c("b1[1,1]", "b1[2,1]", "b1[3,1]", "b1[4,1]",
+                                  "b1[5,1]", "b1[6,1]", "b1[7,1]"))
+
+```
+
+
+```{r}
+mcmc_dens(jm.4$samples, pars = c("b1[1,2]", "b1[2,2]", "b1[3,2]", "b1[4,2]",
+                                  "b1[5,2]", "b1[6,2]", "b1[7,2]"))
+
+```
+
+Some are pushed against zero... 
+
+```{r}
+pred.list.jm.4 <- extract.prediction.exp(zm = jm.4, 
+                                         jags.data = jags.data)
+
+pred.list.jm.4$pred.df %>% 
+  mutate(Month = ifelse(Month2 < 4, Month2 + 9, Month2 - 3),
+         Month_f = factor(Month, 
+                          levels = c("10", "11", "12", "1", "2", "3", "4"))) -> pred.df.jm.4
+
+pred.df.jm.4 %>% filter(Year == 2018) -> pred.df.jm.4.2018
+
+
+ggplot() + 
+  geom_point(data = inund,
+             aes(x = std_dist_berm(Dist_from_Berm),
+                 y = log(Inund_Height))) +
+  geom_path(data = pred.df.jm.4,
+            aes(x = Dist_Berm,
+                 y = (pred_med))) +
+  geom_ribbon(data = pred.df.jm.4,
+              aes(x = Dist_Berm,
+                  ymin = (pred_low),
+                  ymax = (pred_high)),
+              alpha = 0.5) +
+  facet_grid(Year ~ Month_f)  
+
+```
+
+
+To simplify the exponential decay model, I made the "intercept" and distance coefficients month-specific and added a year effect:
+
+mu.y[i] <- b0[month[i]] * exp(b1[month[i]] * Dist_from_Berm[i] + b2 * year[i])
+
+y[i] ~ dnorm(mu.y[i], tau.y)  
+
+
+```{r}
+MCMC.params$model.file = "models/Model_exp_month_year_1.txt"
+
+parameters <- c("b0", "b1", "b2", "sigma.y", "fit", "fit.new", "deviance")
+
+if (!file.exists("RData/exp_month_year_1_aboveMed.rds")){
+  jm.5 <- jags(data = jags.data,
+               #inits = inits,
+               parameters.to.save= parameters,
+               model.file = MCMC.params$model.file,
+               n.chains = MCMC.params$n.chains,
+               n.burnin = MCMC.params$n.burnin,
+               n.thin = MCMC.params$n.thin,
+               n.iter = MCMC.params$n.samples,
+               DIC = T, 
+               parallel=T)
+  
+  saveRDS(jm.5, file = "RData/exp_month_year_1_aboveMed.rds")  
+} else {
+  jm.5 <- readRDS("RData/exp_month_year_1_aboveMed.rds")
+}
+
+summary(jm.5)  
+```
+
+Posteriors:
+
+```{r}
+mcmc_dens(jm.5$samples, pars = c("b0[1]", "b0[2]", "b0[3]", "b0[4]",
+                                  "b0[5]", "b0[6]", "b0[7]"))
+```
+
+
+```{r}
+mcmc_dens(jm.5$samples, pars = c("b1[1]", "b1[2]", "b1[3]", "b1[4]",
+                                  "b1[5]", "b1[6]", "b1[7]"))
+```
+
+```{r}
+mcmc_dens(jm.5$samples, pars = "b2")
+```
+
+
+```{r}
+pred.list.jm.5 <- extract.prediction.exp2(zm = jm.5, 
+                                         jags.data = jags.data)
+
+pred.list.jm.5$pred.df %>% 
+  mutate(Month = ifelse(Month2 < 4, Month2 + 9, Month2 - 3),
+         Month_f = factor(Month, 
+                          levels = c("10", "11", "12", "1", "2", "3", "4"))) -> pred.df.jm.5
+
+pred.df.jm.5 %>% filter(Year == 2018) -> pred.df.jm.5.2018
+
+
+ggplot() + 
+  geom_point(data = inund,
+             aes(x = std_dist_berm(Dist_from_Berm),
+                 y = log(Inund_Height))) +
+  geom_path(data = pred.df.jm.5,
+            aes(x = Dist_Berm,
+                 y = (pred_med))) +
+  geom_ribbon(data = pred.df.jm.5,
+              aes(x = Dist_Berm,
+                  ymin = (pred_low),
+                  ymax = (pred_high)),
+              alpha = 0.5) +
+  facet_grid(Year ~ Month_f)  
+
+```
+
+
+DIC is best for jm.2_1 (2nd order polynomial with month/year intercepts).   
+```{r}
+c(jm.1$DIC, jm.2$DIC, jm.2_1$DIC, jm.3$DIC, jm.4$DIC, jm.5$DIC)
+```
+
+

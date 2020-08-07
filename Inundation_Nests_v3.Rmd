@@ -184,66 +184,121 @@ ggsave(plot = p.1, filename = "figures/inundation_phase1_aboveMedian.png",
 p.1
 ```
 
-There may be some patterns of high phase 1 mortality below regression lines? Let's try measuring the distance between each nest and the regression line.
+There may be some patterns of high phase 1 mortality below regression lines? 
 
-Phase 2?
-```{r}
-ggplot() + 
-   geom_point(data = nest.data,
-              aes(x = scaled_Dist_Berm,
-                  y = (Nest_Elevation),
-                  color = Phase_2_death),
-              alpha = 0.5) +
-  geom_point(data = inund,
-             aes(x = scaled_Dist_Berm,
-                 y = (Inund_Height)),
-             color = "red") +
-  geom_path(data = pred.df.jm.2,
-            aes(x = Dist_Berm,
-                 y = exp(pred_med))) +
-  geom_ribbon(data = pred.df.jm.2,
-              aes(x = Dist_Berm,
-                  ymin = exp(pred_low),
-                  ymax = exp(pred_high)),
-              alpha = 0.5) +
-  facet_grid(Year ~ Month_f) + 
-  labs(title = "Date laid + Phase 2")
+We somewhat agreed on the following steps using these regression lines.
 
-```
+1. Take a nest and determine the nest elevation (e.g., 3.72 for 1712-001) - The nest elevations are all measured from the bottom of the nest.
+2. Determine bottom/middle/complete inundation heights for the j-th nest , which are computed from the nest elevation and its definition. Let's call them H_bottom_j, H_middle_j, and H_complete_j.
+3. Count how many of recorded above-median tide heights during the X days (please specify how many days) of incubation (provided in inundationRaine_abovemedian.csv) were greater than H_bottom_j, H_middle_j, and H_complete_j. 
 
-Not sure why a couple of the proportion are >1...  This is from how total clutch size was computed in the data file. It doesn't make sense but asked a question (2020-04-09). This was fixed.
-
+OC: Yes, this is how I see it, my only question to point 3 would be that while we now have a better spread of heights across the month that may correspond with inundation events for the nests, do we not still need to develop a curve for each event to estimate the height of inundation along the beach profile for those nests not located in proximity to an inundation logger?
 
 ```{r}
+# find predicted inundation height at each observed nest
 nest.data %>% select(Month2, Year, scaled_Dist_Berm) %>%
   mutate(Year = ifelse(Year == 2018, 1, 2),
-         Month = Month2) -> new.data
+         Month = Month2) -> new.data.month1
 
-pred.data <- predict.poly2.1(zm = jm.2_1, new.data = new.data)
+nest.data %>% select(Month2, Year, scaled_Dist_Berm) %>%
+  mutate(Year = ifelse(Year == 2018, 1, 2),
+         Month = Month2 +1) -> new.data.month2
 
-pred.data$qtiles %>% transmute(log.pred.inund.elev.50 = X50.,
-                               log.pred.inund.elev.2.5 = X2.5.,
-                               log.pred.inund.elev.97.5 = X97.5.) %>%
+nest.data %>% select(Month2, Year, scaled_Dist_Berm) %>%
+  mutate(Year = ifelse(Year == 2018, 1, 2),
+         Month = Month2+2) -> new.data.month3
+
+pred.data.month1 <- predict.poly2.1(zm = jm.2_1, new.data = new.data.month1)
+pred.data.month2 <- predict.poly2.1(zm = jm.2_1, new.data = new.data.month2)
+pred.data.month3 <- predict.poly2.1(zm = jm.2_1, new.data = new.data.month3)
+
+pred.data.month1$qtiles %>% 
+  transmute(log.pred.inund.elev.50 = X50.,
+            log.pred.inund.elev.2.5 = X2.5.,
+            log.pred.inund.elev.97.5 = X97.5.) %>%
   cbind(nest.data) %>%
   mutate(dif.nest.pred = Nest_Elevation - exp(log.pred.inund.elev.50),
          dif.nest.pred.2.5 = Nest_Elevation - exp(log.pred.inund.elev.2.5),
          dif.nest.pred.97.5 = Nest_Elevation - exp(log.pred.inund.elev.97.5),
          pred.inund.elev = exp(log.pred.inund.elev.50),
          pred.inund.elev.2.5 = exp(log.pred.inund.elev.2.5),
-         pred.inund.elev.97.5 = exp(log.pred.inund.elev.97.5)) -> nest.data.2
+         pred.inund.elev.97.5 = exp(log.pred.inund.elev.97.5)) -> nest.pred.data.month1
 
+pred.data.month2$qtiles %>% 
+  transmute(log.pred.inund.elev.50 = X50.,
+            log.pred.inund.elev.2.5 = X2.5.,
+            log.pred.inund.elev.97.5 = X97.5.) %>%
+  cbind(nest.data) %>%
+  mutate(dif.nest.pred = Nest_Elevation - exp(log.pred.inund.elev.50),
+         dif.nest.pred.2.5 = Nest_Elevation - exp(log.pred.inund.elev.2.5),
+         dif.nest.pred.97.5 = Nest_Elevation - exp(log.pred.inund.elev.97.5),
+         pred.inund.elev = exp(log.pred.inund.elev.50),
+         pred.inund.elev.2.5 = exp(log.pred.inund.elev.2.5),
+         pred.inund.elev.97.5 = exp(log.pred.inund.elev.97.5)) -> nest.pred.data.month2
+
+pred.data.month3$qtiles %>% 
+  transmute(log.pred.inund.elev.50 = X50.,
+            log.pred.inund.elev.2.5 = X2.5.,
+            log.pred.inund.elev.97.5 = X97.5.) %>%
+  cbind(nest.data) %>%
+  mutate(dif.nest.pred = Nest_Elevation - exp(log.pred.inund.elev.50),
+         dif.nest.pred.2.5 = Nest_Elevation - exp(log.pred.inund.elev.2.5),
+         dif.nest.pred.97.5 = Nest_Elevation - exp(log.pred.inund.elev.97.5),
+         pred.inund.elev = exp(log.pred.inund.elev.50),
+         pred.inund.elev.2.5 = exp(log.pred.inund.elev.2.5),
+         pred.inund.elev.97.5 = exp(log.pred.inund.elev.97.5)) -> nest.pred.data.month3
+
+dif.nest.pred <- data.frame(Berm_Dist = nest.data$Berm_Dist,
+                            Nest_Elevation = nest.data$Nest_Elevation,
+                            Rate_Success = nest.data$rate_success,
+                            dif.nest.med.month1 = nest.pred.data.month1$dif.nest.pred,
+                            dif.nest.2.5.month1 = nest.pred.data.month1$dif.nest.pred.2.5,
+                            dif.nest.97.5.month1 = nest.pred.data.month1$dif.nest.pred.97.5,
+                            dif.nest.med.month2 = nest.pred.data.month2$dif.nest.pred,
+                            dif.nest.2.5.month2 = nest.pred.data.month2$dif.nest.pred.2.5,
+                            dif.nest.97.5.month2 = nest.pred.data.month2$dif.nest.pred.97.5,
+                            dif.nest.med.month3 = nest.pred.data.month3$dif.nest.pred,
+                            dif.nest.2.5.month3 = nest.pred.data.month3$dif.nest.pred.2.5,
+                            dif.nest.97.5.month3 = nest.pred.data.month3$dif.nest.pred.97.5)
 #write.csv(nest.data.2, file = "data/nest_inund_prediction.csv")
 
-ggplot(nest.data.2) + 
+p.2 <- ggplot(data = dif.nest.pred) + 
   geom_errorbar(aes(x = Berm_Dist,
-                    ymin = pred.inund.elev.2.5,
-                    ymax = pred.inund.elev.97.5)) +
+                    ymin = dif.nest.2.5.month1,
+                    ymax = dif.nest.97.5.month1)) +
   geom_point(aes(x = Berm_Dist,
-                 y = pred.inund.elev,
-                 color = rate_success,
-                 shape = as.factor(Year))) 
+                 y = dif.nest.med.month1,
+                 size = Rate_Success)) +
+  geom_errorbar(aes(x = Berm_Dist,
+                    ymin = dif.nest.2.5.month2,
+                    ymax = dif.nest.97.5.month2),
+                color = "orange") +
+  geom_point(aes(x = Berm_Dist,
+                 y = dif.nest.med.month2,
+                 size = Rate_Success),
+             color = "orange",
+             alpha = 0.4) +
+  geom_errorbar(aes(x = Berm_Dist,
+                    ymin = dif.nest.2.5.month3,
+                    ymax = dif.nest.97.5.month3),
+                color = "red") +
+  geom_point(aes(x = Berm_Dist,
+                 y = dif.nest.med.month3,
+                 size = Rate_Success),
+             color = "red",
+             alpha = 0.4) +
+  labs(title = "Difference between nest and tide heights") + 
+  xlab("Distance from Berm") + 
+  ylab("Nest height - tide height")
 
+ggsave(p.2, filename = "figures/dif_nest_tide_heights_3months.png",
+       device = "png", dpi = 600)
+
+p.2
 ```
+
+
+
 
 ```{r}
 ggplot(nest.data.2) + 
