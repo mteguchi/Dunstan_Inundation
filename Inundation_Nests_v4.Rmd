@@ -11,11 +11,11 @@ In this Notebook, I use the second-order polynomial function fitted to the inund
 
 Yep, that’d be great and yes, for max inundation heights for each of the 3 months post laying. These curves look good.
 
-For this version (v.3), I try to fulfill the following request from Owen Coffee (2020-08-04):
+For this version (v.4), I try to fulfill the following request from Owen Coffee (2020-08-04):
 
 "The updated inundation logger .csv now contains the inundation heights for all highs in a month above the median (each max in the tidal cycle + ~ 2 days either side) not just the max as was previously used. As you have said, bottom/mid/complete can be calculated from each individual nest depth so really the difference in the analysis is now not just determining inundation from the max monthly high for each incubation month, but how many of the identified highs above median for each month (1st, 2nd and 3rd month of incubation) would correspond with each of bottom/mid/complete inundation for the considered nests. The hope would then be to estimate the total period immersed for each of those inundation events from what Andy is working on, and then whether the timing (early/mid/late development), frequency or period of inundation correlates with clutch mortality."
 
-I'm still unclear on exactly what he's asking... but looking at the data may help. 
+It turned out that he wanted me to fit multiple lines within each month - done in inundation_v4.Rmd. Results are brought in here. 
 
 Load essential libraries first.
 
@@ -50,28 +50,66 @@ inund.cols <- cols(
    Inund_Height = col_double())
 
 inund <- read_csv("data/inundationRaine_abovemedian.csv", col_types = inund.cols)
-min.Dist <- min(inund$Dist_from_Berm)
-sd.Dist <- sqrt(var(inund$Dist_from_Berm))
-
-inund %>% mutate(Year = ifelse(Date < as.Date("2018-05-01"), 2018, 2019)) %>%
-  mutate(Month = month(Date)) %>%
-  filter(Transect != 2) %>%
+inund %>% filter(Transect != 2) %>%
   mutate(Transect_f = as.factor(Transect),
+         Year = ifelse(Date < as.Date("2018-05-01"), 2018, 2019),
          Year2 = ifelse(Year == 2018, 1, 2),
-         Month2 = ifelse(Month > 9, Month - 9, Month + 3),
-         Month_f = factor(Month, levels = c("10", "11", "12", "1", "2", "3", "4")),
          Transect2 = Transect - 1,
-         log_inund = log(Inund_Height),
-         scaled_Dist_Berm = (Dist_from_Berm - min.Dist)/sd.Dist) -> inund
+         log_inund = log(Inund_Height)) %>% 
+  arrange(Date)-> inund
 
-inund.2018 <- filter(inund, Year == 2018)
-inund.2019 <- filter(inund, Year == 2019)
+# define datasets by looking at difference in consecutive dates.
+dt <- as.numeric(inund$Date[2:length(inund$Date)] - inund$Date[1:(length(inund$Date)-1)])
+inund$dt <- c(0, dt)
+inund$dataset.ID <- cumsum(ifelse(inund$dt < 2, 0, 1)) + 1
 
-#View(inund)
-# Replaced Feb-18 with 15/02/2018 (TE, 2020-03-19)
-# Replaced Dec-18 with 15/12/2018 (TE, 2020-03-19)
-# Replaced Feb-20 with 15/02/2020 (TE, 2020-03-19)
-#fid,Nest_UID,Northings,Eastings,Aspect,Nest_Elevation,Berm_Dist,Date_laid,Date_dug,Sector,Habitat,Hatched,Live_hatchlings,Dead_hatchlings,Phase_1,Phase_2,Phase_3,Phase_4,Phase_5,Phase_6,Decomposed,Total_unhatched,Total_clutch,rate_success,Season_Peakpop
+# Datasets are defined by how data are combined among close dates. So, sometimes, they go over two
+# months. These have to be assigned to the same month as the first data point of the particular
+# dataset.
+inund %>% group_by(dataset.ID) %>%
+  mutate(Month = month(nth(Date, 3)),
+         Month2 = ifelse(Month > 9, Month - 9, Month + 3),
+         Month_f = factor(Month, levels = c("10", "11", "12", "1", "2", "3", "4"))) -> inund
+
+# for each month, I want to find out which datasets represent the highest and lowest tides, assign values for later use. Sometimes there is only one dataset per month and as many as four. 
+y <- m <- 1
+tide.order <- data.frame(tide.order = NA,
+                         dataset.ID = NA) 
+
+m <- 7
+for (y in 1:2){
+  for (m in 1:7){
+    inund %>% filter(Year2 == y & Month2 == m) %>%
+      select(dataset.ID) %>% 
+      unique() -> unique.ID
+    
+      inund %>% filter(dataset.ID %in% unlist(unique.ID)) %>%
+        group_by(dataset.ID) %>%
+        summarise(tide.height = first(Inund_Height)) %>%
+        arrange(by = desc(tide.height)) %>%
+        rownames_to_column("tide.order" ) %>% #-> tmp #
+        select(tide.order, dataset.ID)  %>%
+        rbind(tide.order) -> tide.order
+        
+      #right_join(inund) 
+    
+      
+  }
+}
+
+tide.order %>% na.omit() %>% right_join(inund, by = "dataset.ID") -> inund
+
+min.Dist <- min(inund$log_inund)
+sd.Dist <- sqrt(var(inund$log_inund))
+
+# create dataset vs. month/year look up table
+inund %>% 
+  select(dataset.ID, Month, Month2, Year2) %>% 
+  group_by(dataset.ID) %>% 
+  summarise(Month = first(Month), 
+            Month2 = first(Month2),
+            Year2 = first(Year2)) %>%
+  left_join(na.omit(tide.order))-> dataset_def 
 
 nest.cols <- cols(fid = col_integer(), 
                   Nest_UID = col_character(), 
@@ -107,7 +145,7 @@ nest.data %>% mutate(Year = ifelse(Date_laid < as.Date("2018-05-01"), 2018, 2019
   mutate(Month = month(Date_laid),
          Month2 = ifelse(Month > 9, Month - 9, Month + 3),
          Month_f = factor(Month, levels = c("10", "11", "12", "1", "2", "3", "4")),
-         scaled_Dist_Berm = (Berm_Dist - min.Dist)/sd.Dist,
+         scaled_Dist_Berm = (log(Berm_Dist) - min.Dist)/sd.Dist,
          Phase_1_death = Phase_1/Total_clutch,
          Phase_2_death = Phase_2/Total_clutch) -> nest.data
 
@@ -122,77 +160,84 @@ y[i] ~ dnorm(mu.y[i], tau.y)
 
 Results of model fitting is saved in a .rds file (ran in inundation_Nests_v2.Rmd).
 ```{r}
-jags.data <- list(y = inund$log_inund,
+jags.data <- list(dataset.ID = inund$dataset.ID,
+                  y = inund$log_inund,
                   month = inund$Month2,
-                  Dist_Berm = std_dist_berm(inund$Dist_from_Berm),
+                  Dist_Berm = inund$Dist_from_Berm,
                   year = inund$Year2,
                   N = nrow(inund),
-                  n.months = length(unique(inund$Month2)),
-                  n.years = length(unique(inund$Year2)))
+                  n.dataset = length(unique(inund$dataset.ID)),
+                  n.years = length(unique(inund$Year2)),
+                  n.months = length(unique(inund$Month2)))
 
 MCMC.params <- list(n.samples = 10000,
                     n.burnin = 5000,
                     n.thin = 5,
-                    n.chains = 5,
-                    model.file = "models/Model_Poly2_1_month_year.txt") 
+                    n.chains = 5)
 
 #model.file = "models/Model_Poly2_month_year.txt")
 
 parameters <- c("b0", "b1", "b2", "b12", "sigma.y",
                  "fit", "fit.new", "deviance")
 
-jm.2_1 <- readRDS("RData/Poly2_1_month_year_aboveMed.rds")
+jm.2 <- readRDS("RData/Poly2_dataset_month_year_aboveMed.rds")
 
 ```
 
 
 Extract the posterior samples and create plots
 ```{r}
-pred.list.jm.2 <- extract.prediction.poly2.1(zm = jm.2_1, 
-                                           jags.data = jags.data)
+pred.list.jm.2.1 <- extract.prediction.poly2.dataset.month(zm = jm.2, 
+                                                           jags.data = jags.data, 
+                                                           dataset_def = dataset_def)
 
-pred.list.jm.2$pred.df %>% 
-  mutate(Month = ifelse(Month2 < 4, Month2 + 9, Month2 - 3),
+sigma.y <- quantile(pred.list.jm.2.1$sigma.y, 0.5)
+
+# need to transform dataset ID to month:
+pred.list.jm.2.1$pred.df %>% left_join(dataset_def, by = "dataset.ID") -> pred.df.jm.2.1
+
+pred.df.jm.2.1 %>% 
+  mutate(Year = Year2 + 2017,
          Month_f = factor(Month, 
-                          levels = c("10", "11", "12", 
-                                     "1", "2", "3", "4"))) -> pred.df.jm.2
+                          levels = c("10", "11", "12", "1", "2", "3", "4"))) -> pred.df.jm.2.1
 
-sigma.y <- quantile(pred.list.jm.2$sigma.y, 0.5)
 
 p.1 <- ggplot() + 
   geom_point(data = inund,
-             aes(x = std_dist_berm(Dist_from_Berm),
-                 y = log_inund),
-             color = "gray") +
-  geom_path(data = pred.df.jm.2,
+             aes(x = (Dist_from_Berm),
+                 y = log(Inund_Height))) +
+  geom_path(data = pred.df.jm.2.1,
             aes(x = Dist_Berm,
-                 y = (pred_med))) +
-  geom_ribbon(data = pred.df.jm.2,
+                y = (pred_med),
+                group = dataset.ID)) +
+  geom_ribbon(data = pred.df.jm.2.1,
               aes(x = Dist_Berm,
                   ymin = (pred_low),
-                  ymax = (pred_high)),
+                  ymax = (pred_high),
+                  group = dataset.ID),
               alpha = 0.5) +
-  geom_ribbon(data = pred.df.jm.2,
-              aes(x = Dist_Berm,
-                  ymax = pred_med + sigma.y * 2,
-                  ymin = pred_med - sigma.y * 2),
-              alpha = 0.5,
-              fill = "orange") +
-   geom_point(data = nest.data,
-              aes(x = scaled_Dist_Berm,
+  geom_ribbon(data = pred.df.jm.2.1,
+              aes(ymin = pred_med - median(sigma.y) * 2,
+                  ymax = pred_med + median(sigma.y) * 2,
+                  x = Dist_Berm,
+                  group = dataset.ID,
+                  fill = tide.order),
+              alpha = 0.4) +
+  facet_grid(Year ~ Month_f)  +
+     geom_point(data = nest.data,
+              aes(x = Berm_Dist,
                   y = log(Nest_Elevation),
-                  color = Phase_1_death),
+                  color = rate_success),
               alpha = 0.5) +
   facet_grid(Year ~ Month_f) + 
-  labs(title = "Predicted inundation height and phase 1 deaths")
+  labs(title = "Predicted inundation height and success rate")
 
-ggsave(plot = p.1, filename = "figures/inundation_phase1_aboveMedian.png",
+#theme(legend.position = "none") 
+ggsave(plot = p.1, filename = "figures/inundation_success_aboveMedian.png",
        device = "png", dpi = 600)
 
 p.1
 ```
-
-There may be some patterns of high phase 1 mortality below regression lines? 
 
 We somewhat agreed on the following steps using these regression lines.
 
@@ -202,21 +247,28 @@ We somewhat agreed on the following steps using these regression lines.
 
 OC: Yes, this is how I see it, my only question to point 3 would be that while we now have a better spread of heights across the month that may correspond with inundation events for the nests, do we not still need to develop a curve for each event to estimate the height of inundation along the beach profile for those nests not located in proximity to an inundation logger?
 
+
 ```{r}
 # find predicted inundation height at each observed nest
-nest.data %>% select(Month2, Year, scaled_Dist_Berm) %>%
+nest.data %>% select(Month2, Year, Berm_Dist) %>%
   mutate(Year = ifelse(Year == 2018, 1, 2),
          Month = Month2) -> new.data.month1
 
-nest.data %>% select(Month2, Year, scaled_Dist_Berm) %>%
+nest.data %>% select(Month2, Year, Berm_Dist) %>%
   mutate(Year = ifelse(Year == 2018, 1, 2),
          Month = Month2 +1) -> new.data.month2
 
-nest.data %>% select(Month2, Year, scaled_Dist_Berm) %>%
+nest.data %>% select(Month2, Year, Berm_Dist) %>%
   mutate(Year = ifelse(Year == 2018, 1, 2),
          Month = Month2+2) -> new.data.month3
 
-pred.data.month1 <- predict.poly2.1(zm = jm.2_1, new.data = new.data.month1)
+# THE FOLLOWING FUNCTION NEEDS TO BE FIXED BECAUSE A MONTH-YEAR COMBINATION CAN HAVE MULTIPLE MODEL FITS...
+# SOMEHOW DATES HAVE TO BE INCLUDED SO THAT ONE MODEL FIT CAN BE PULLED OUT AND PREDICTIONS COMPUTED.
+# 2020-08-07
+pred.data.month1 <- predict.poly2.dataset.month(zm = jm.2, 
+                                                new.data = new.data.month1, 
+                                                dataset_def = dataset_def)
+
 pred.data.month2 <- predict.poly2.1(zm = jm.2_1, new.data = new.data.month2)
 pred.data.month3 <- predict.poly2.1(zm = jm.2_1, new.data = new.data.month3)
 

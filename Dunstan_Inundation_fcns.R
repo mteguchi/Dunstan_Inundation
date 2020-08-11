@@ -246,7 +246,7 @@ extract.prediction.poly2 <- function(zm, jags.data){
   }
   
   # collect all posterior
-  coefs <- c(b0, b1, b12, b2)
+  coefs <- list(b0=b0, b1=b1, b12=b12, b2=b2)
 
   # get quantiles
   qtiles <- lapply(pred.Y, 
@@ -277,6 +277,162 @@ extract.prediction.poly2 <- function(zm, jags.data){
   return(out.list)
 }
 
+# extract posteriors for 2nd order polynomial with a year term and dataset
+# specific intercept (not month). Need a lookup table for dataset ID vs year
+extract.prediction.poly2.dataset <- function(zm, jags.data, dataset_def){
+  length.dataset <- jags.data$n.dataset
+  length.year <- jags.data$n.years
+  
+  # using centered and scaled distances
+  Dvec <- seq(floor(min(jags.data$Dist_Berm)), 
+              (max(jags.data$Dist_Berm)), 
+              by = 0.1)  # min and max of Distance from Berm
+  
+  #Yvec <- seq(1, length.year)
+  b2 <- extract.samples("b2", zm$samples)
+  
+  b0 <- b1 <- b12 <- pred.Y <- vector(mode = "list", length = length.dataset)
+  c <- 1
+  for (c in 1:jags.data$n.dataset){
+    b0[[c]] <- extract.samples(paste0("b0[", c, "]"), zm$samples)
+    b1[[c]] <- extract.samples(paste0("b1[", c, "]"), zm$samples)
+    b12[[c]] <- extract.samples(paste0("b12[", c, "]"), zm$samples)
+    
+    Year <- filter(dataset_def, dataset.ID == c) %>% select(Year2) %>% as.integer()
+    
+    pred.Y[[c]] <- b0[[c]] + b1[[c]] %*% t(Dvec) + b12[[c]] %*% t(Dvec^2) + b2 * Year
+    
+  }
+  
+  # collect all posterior
+  coefs <- list(b0=b0, b1=b1, b12=b12, b2=b2)
+  
+  # get quantiles
+  qtiles <- lapply(pred.Y, 
+                   FUN = function(x) apply(x, MARGIN = 2, 
+                                           FUN = quantile, c(0.025, 0.5, 0.975)))
+  
+  qtiles.mat <- data.frame(do.call(rbind, lapply(qtiles, FUN = t)))
+  
+  dataset.vec <- rep(seq(1, jags.data$n.dataset), 
+                     each = length(Dvec))
+  
+  pred.df <- data.frame(dataset.ID = dataset.vec, 
+                        Dist_Berm = rep(Dvec, jags.data$n.dataset),
+                        pred_low = qtiles.mat$X2.5., 
+                        pred_med = qtiles.mat$X50., 
+                        pred_high = qtiles.mat$X97.5.)
+  
+  
+  out.list <- list(pred.df = pred.df,
+                   coefs = coefs)
+  
+  return(out.list)
+}
+
+# poly2.dataset.month prediction for any distance/yr/month combo
+# new.data should have three variables: Month, Year, and Dist_Berm
+# Month should be transformed into nesting month, where October is 1 and 
+# April is 7. Year should be transformed so that 2018 is 1 and 2019 is 2.
+predict.poly2.dataset.month <- function(zm, new.data, dataset_def){
+  
+  pred.Y <- vector(mode = "list", length = nrow(new.data))
+  k <- 1
+  for (k in 1:nrow(new.data)){
+    dataset_def %>% filter(Month2 == new.data$Month[k] & Year2 ==  new.data$Year[k]) %>%
+      select(dataset.ID, tide.order, Year2) %>%
+      arrange(by = tide.order) -> b0.idx 
+
+    b1 <- extract.samples(paste0("b1[", new.data$Month2[k], "]"), zm$samples)
+    b12 <- extract.samples(paste0("b12[", new.data$Month2[k], "]"), zm$samples)
+    b2  <- extract.samples(paste0("b2"), zm$samples)
+    
+    pred.Y.k1 <- vector(mode = "list", length = nrow(b0.idx))
+    k1 <- 1
+    for (k1 in 1:nrow(b0.idx)){
+      b0 <- extract.samples(paste0("b0[", b0.idx[k1,1], "]"), zm$samples)
+      pred.Y.k1[[k1]] <- b0 + b1 * new.data$Berm_Dist[k] + 
+        b12 * (new.data$Berm_Dist[k])^2 + 
+        b2 * as.integer(b0.idx[k1, "Year2"])
+    }
+
+    pred.Y[[k]] <- pred.Y.k1
+    
+  }
+  
+  # get quantiles
+  qtiles <- lapply(pred.Y, 
+                   FUN = quantile, c(0.025, 0.5, 0.975),
+                   na.rm = T)
+  
+  qtiles.df <- data.frame(do.call(rbind, lapply(qtiles, FUN = t)))
+  
+  out.list <- list(pred.Y = pred.Y,
+                   qtiles = qtiles.df)
+  return(out.list)
+  
+}
+
+# extract posteriors for 2nd order polynomial with a year term
+extract.prediction.poly2.dataset.month <- function(zm, jags.data, dataset_def){
+  length.month <- length(unique(jags.data$month)) 
+  length.year <- jags.data$n.years
+  length.dataset <- jags.data$n.dataset
+  
+  # using centered and scaled distances
+  Dvec <- seq(floor(min(jags.data$Dist_Berm)), 
+              (max(jags.data$Dist_Berm)), 
+              by = 0.1)  # min and max of Distance from Berm
+  #Yvec <- seq(1, length.year)
+  
+  b2 <- extract.samples("b2", zm$samples)
+  b1 <- b12  <- vector(mode = "list", length = length.month)
+  b0 <- pred.Y <- vector(mode = "list", length = length.dataset)
+  k <- k1 <- c <- 1
+
+  # month-specific coefficients
+  for (k in 1:length.month){
+    b1[[k]] <- extract.samples(paste0("b1[", k, "]"), zm$samples)
+    b12[[k]] <- extract.samples(paste0("b12[", k, "]"), zm$samples)
+  }
+  
+  k <- 1
+  for (k in 1:length.dataset){
+    b0[[k]] <- extract.samples(paste0("b0[", k, "]"), zm$samples)
+    c.month <- as.integer(dataset_def[k, "Month2"])
+    
+    pred.Y[[k]] <- b0[[k]] + b1[[c.month]] %*% t(Dvec) + 
+      b12[[c.month]] %*% t(Dvec^2) + b2 * as.integer(dataset_def[k, "Year2"])
+  }
+  
+  # collect all posterior samples
+  coefs <- list(b0 = b0, b1 = b1, b12 = b12, b2 = b2)
+  
+  sigma.y <- extract.samples("sigma.y", zm$samples)
+  
+  # get quantiles
+  qtiles <- lapply(pred.Y, 
+                   FUN = function(x) apply(x, MARGIN = 2, 
+                                           FUN = quantile, c(0.025, 0.5, 0.975)))
+  
+  qtiles.mat <- data.frame(do.call(rbind, lapply(qtiles, FUN = t)))
+  
+  dataset.vec <- rep(seq(1, jags.data$n.dataset), 
+                     each = length(Dvec))
+  
+  pred.df <- data.frame(dataset.ID = dataset.vec, 
+                        Dist_Berm = rep(Dvec, jags.data$n.dataset),
+                        pred_low = qtiles.mat$X2.5., 
+                        pred_med = qtiles.mat$X50., 
+                        pred_high = qtiles.mat$X97.5.)
+  
+  out.list <- list(pred.df = pred.df,
+                   coefs = coefs,
+                   sigma.y = sigma.y)
+  
+  return(out.list)
+}
+
 # extract posteriors for 2nd order polynomial with no year term
 # but month/year specific intercepts
 extract.prediction.poly2.1 <- function(zm, jags.data){
@@ -303,8 +459,10 @@ extract.prediction.poly2.1 <- function(zm, jags.data){
     }
   }
   
+  sigma.y <- extract.samples("sigma.y", zm$samples)
+  
   # collect all posterior
-  coefs <- c(b0, b1, b12)
+  coefs <- list(b0=b0, b1=b1, b12=b12)
   
   # get quantiles
   qtiles <- lapply(pred.Y, 
@@ -330,7 +488,8 @@ extract.prediction.poly2.1 <- function(zm, jags.data){
   
   
   out.list <- list(pred.df = pred.df,
-                   coefs = coefs)
+                   coefs = coefs,
+                   sigma.y = sigma.y)
   
   return(out.list)
 }

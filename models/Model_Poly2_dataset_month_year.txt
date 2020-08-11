@@ -1,0 +1,34 @@
+# JAGS model to fit a second order polynomial model to water height vs. distance from berm
+
+
+model{
+	for (i in 1:N){
+		mu.y[i] <- b0[dataset.ID[i]] + b1[month[i]] * Dist_Berm[i] + b12[month[i]] * Dist_Berm[i] * Dist_Berm[i] + b2 * year[i]
+		y[i] ~ dnorm(mu.y[i], tau.y)  
+
+		res[i] <- y[i] - mu.y[i]    # residual
+		sim.y[i] ~ dnorm(mu.y[i], tau.y)
+		res.sim[i] <- sim.y[i] - mu.y[i]
+
+	}
+	
+	sigma.y <- sqrt(1/tau.y)
+
+	tau.y ~ dgamma(0.1, 0.01)
+
+	for (k in 1:n.dataset){
+		b0[k] ~ dnorm(0, 0.01)
+	}
+
+  for (k in 1:n.months){
+    b1[k] ~ dnorm(0, 0.01)
+		b12[k] ~ dnorm(0, 0.01)
+  }
+  
+	b2 ~ dnorm(0, 0.01)
+
+	#Derived parameters
+  	fit <- sum(res[])
+  	fit.new <- sum(res.sim[])
+
+}
