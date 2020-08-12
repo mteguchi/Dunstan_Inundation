@@ -336,15 +336,17 @@ extract.prediction.poly2.dataset <- function(zm, jags.data, dataset_def){
 # April is 7. Year should be transformed so that 2018 is 1 and 2019 is 2.
 predict.poly2.dataset.month <- function(zm, new.data, dataset_def){
   
-  pred.Y <- vector(mode = "list", length = nrow(new.data))
+  data.idx <- qtiles <- pred.Y <- vector(mode = "list", length = nrow(new.data))
+  
   k <- 1
   for (k in 1:nrow(new.data)){
     dataset_def %>% filter(Month2 == new.data$Month[k] & Year2 ==  new.data$Year[k]) %>%
       select(dataset.ID, tide.order, Year2) %>%
       arrange(by = tide.order) -> b0.idx 
 
-    b1 <- extract.samples(paste0("b1[", new.data$Month2[k], "]"), zm$samples)
-    b12 <- extract.samples(paste0("b12[", new.data$Month2[k], "]"), zm$samples)
+    data.idx[[k]] <- b0.idx
+    b1 <- extract.samples(paste0("b1[", new.data$Month[k], "]"), zm$samples)
+    b12 <- extract.samples(paste0("b12[", new.data$Month[k], "]"), zm$samples)
     b2  <- extract.samples(paste0("b2"), zm$samples)
     
     pred.Y.k1 <- vector(mode = "list", length = nrow(b0.idx))
@@ -357,18 +359,16 @@ predict.poly2.dataset.month <- function(zm, new.data, dataset_def){
     }
 
     pred.Y[[k]] <- pred.Y.k1
+    # get quantiles
+    qtiles[[k]] <- lapply(pred.Y[[k]], 
+                     FUN = quantile, c(0.025, 0.5, 0.975),
+                     na.rm = T)
     
   }
   
-  # get quantiles
-  qtiles <- lapply(pred.Y, 
-                   FUN = quantile, c(0.025, 0.5, 0.975),
-                   na.rm = T)
-  
-  qtiles.df <- data.frame(do.call(rbind, lapply(qtiles, FUN = t)))
-  
   out.list <- list(pred.Y = pred.Y,
-                   qtiles = qtiles.df)
+                   qtiles = qtiles,
+                   data.idx = data.idx)
   return(out.list)
   
 }
