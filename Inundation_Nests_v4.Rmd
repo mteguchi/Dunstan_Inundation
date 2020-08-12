@@ -255,28 +255,27 @@ OC: Yes, this is how I see it, my only question to point 3 would be that while w
 # find predicted inundation height at each observed nest
 nest.data %>% select(Month2, Year, Berm_Dist) %>%
   mutate(Year = ifelse(Year == 2018, 1, 2),
-         Month1 = Month2,
-         Month2 = Month2 + 1,
-         Month3 = Month2 + 2) -> new.data
+         Month_1 = Month2,
+         Month_2 = Month2 + 1,
+         Month_3 = Month2 + 2) -> new.data
 
 new.data.1 <- new.data %>% transmute(Year = Year,
                                      Berm_Dist = Berm_Dist,
-                                     Month = Month1)
+                                     Month = Month_1)
 pred.data.month1 <- predict.poly2.dataset.month(zm = jm.2, 
                                                 new.data = new.data.1, 
                                                 dataset_def = dataset_def)
 
 new.data.1 <- new.data %>% transmute(Year = Year,
                                      Berm_Dist = Berm_Dist,
-                                     Month = Month2)
+                                     Month = Month_2)
 pred.data.month2 <- predict.poly2.dataset.month(zm = jm.2, 
                                                 new.data = new.data.1, 
                                                 dataset_def = dataset_def)
 
 new.data.1 <- new.data %>% transmute(Year = Year,
                                      Berm_Dist = Berm_Dist,
-                                     Month = Month3) %>%
-  filter(Month < 8)
+                                     Month = Month_3) 
 
 pred.data.month3 <- predict.poly2.dataset.month(zm = jm.2, 
                                                 new.data = new.data.1, 
@@ -286,50 +285,169 @@ pred.data.month3 <- predict.poly2.dataset.month(zm = jm.2,
 # and determine if the nest height was above the upper bound
 # look at bottom of the nest (Nest_Elevation + 0.01), half way up (Nest_Elevation + 0.3),
 # and all the way (Nest_Elevation + 0.6) (I made up 0.6 m so need a correct number.)
-n.inund.bottom <- n.inund.half <- n.inund.full  <- data.frame(Month1 = NA, Month2 = NA, Month3 = NA)
+nest.full <- 0.6
+nest.half <- 0.3
+
+n.inund.half <- n.inund.full  <- data.frame(Month1 = NA, Month2 = NA, Month3 = NA)
 k <- 1
 for(k in 1:length(pred.data.month1$pred.Y)){
   median.heights.1 <- as.numeric(list2DF(pred.data.month1$qtiles[[k]])[2,])
-  upper.heights.1 <- median.heights.1 + (2 * median(sigma.y))
-  nest.height <- as.numeric(log(nest.data[k, "Nest_Elevation"]))
+  upper.heights.1 <- median.heights.1 + (2 * median(sigma.y))  # sigma.y is from log scale
+  nest.height <- as.numeric(log(nest.data[k, "Nest_Elevation"]))  # in log scale
   
-  n.inund.bottom[k, "Month1"] <- sum(upper.heights.1 < (nest.height+0.01) & upper.heights.1 > nest.height)
-  n.inund.half[k, "Month1"] <- sum(upper.heights.1 < (nest.height + 0.3) & upper.heights.1 > nest.height)
-  n.inund.full[k, "Month1"] <- sum(upper.heights.1 < (nest.height + 0.6) & upper.heights.1 > (nest.height+0.3))
+  #n.inund.bottom[k, "Month1"] <- sum(upper.heights.1 < (nest.height+0.01) & upper.heights.1 > nest.height)
+  n.inund.half[k, "Month1"] <- sum(upper.heights.1 > log(exp(nest.height) + nest.half))
+  n.inund.full[k, "Month1"] <- sum(upper.heights.1 > log(exp(nest.height) + nest.full) )
 
   median.heights.2 <- as.numeric(list2DF(pred.data.month2$qtiles[[k]])[2,])
   upper.heights.2 <- median.heights.2 + (2 * median(sigma.y))
-  n.inund.bottom[k, "Month2"] <- sum(upper.heights.2 < (nest.height+0.01) & upper.heights.2 > nest.height)
-  n.inund.half[k, "Month2"] <- sum(upper.heights.2 < (nest.height + 0.3) & upper.heights.2 > nest.height)
-  n.inund.full[k, "Month2"] <- sum(upper.heights.2 < (nest.height + 0.6) & upper.heights.2 > (nest.height+0.3))
+  #n.inund.bottom[k, "Month2"] <- sum(upper.heights.2 < (nest.height+0.01) & upper.heights.2 > nest.height)
+  n.inund.half[k, "Month2"] <- sum(upper.heights.2 > log(exp(nest.height) + nest.half) )
+  n.inund.full[k, "Month2"] <- sum(upper.heights.2 > log(exp(nest.height) + nest.full) )
   
   if (k <= length(pred.data.month3$pred.Y)){
     median.heights.3 <- as.numeric(list2DF(pred.data.month3$qtiles[[k]])[2,])
     upper.heights.3 <- median.heights.3 + (2 * median(sigma.y))
-    n.inund.bottom[k, "Month3"] <- sum(upper.heights.3 < (nest.height+0.01) & upper.heights.3 > nest.height)
-    n.inund.half[k, "Month3"] <- sum(upper.heights.3 < (nest.height + 0.3) & upper.heights.3 > nest.height)
-    n.inund.full[k, "Month3"] <- sum(upper.heights.3 < (nest.height + 0.6) & upper.heights.3 > (nest.height+0.3))
+    #n.inund.bottom[k, "Month3"] <- sum(upper.heights.3 < (nest.height+0.01) & upper.heights.3 > nest.height)
+    n.inund.half[k, "Month3"] <- sum(upper.heights.3 > log(exp(nest.height) + nest.half))
+    n.inund.full[k, "Month3"] <- sum(upper.heights.3 > log(exp(nest.height) + nest.full) )
     
   }
   
 }
 
-nest.data %>% select(Northings, Eastings, Nest_Elevation, Berm_Dist, Total_clutch, 
-                     Habitat, rate_success, Year, Month2, Habitat) -> nest.data.2
+nest.data %>% select(fid, Nest_UID, Northings, Eastings, Nest_Elevation, Berm_Dist, Total_clutch, 
+                     Habitat, rate_success, Year, Month2, Habitat, Phase_1_death, Month_f)  -> nest.data.2
 
-nest.data.2$n.inund.bottom.month1 <- n.inund.bottom$Month1
-nest.data.2$n.inund.bottom.month2 <- n.inund.bottom$Month2
-nest.data.2$n.inund.bottom.month3 <- n.inund.bottom$Month3
+# nest.data.2$n.inund.bottom.month1 <- n.inund.bottom$Month1
+# nest.data.2$n.inund.bottom.month2 <- n.inund.bottom$Month2
+# nest.data.2$n.inund.bottom.month3 <- n.inund.bottom$Month3
 nest.data.2$n.inund.half.month1 <- n.inund.half$Month1
 nest.data.2$n.inund.half.month2 <- n.inund.half$Month2
 nest.data.2$n.inund.half.month3 <- n.inund.half$Month2
 nest.data.2$n.inund.full.month1 <- n.inund.full$Month1
 nest.data.2$n.inund.full.month2 <- n.inund.full$Month2
 nest.data.2$n.inund.full.month3 <- n.inund.full$Month3
+
+#nest.data.2 %>% na.omit() -> nest.data.2
+set.seed(12345)
+
+#write_csv(nest.data.2, path = "data/nest_data_inundation.csv")
+
 nest.data.2$RV <- runif(n = nrow(nest.data.2), min = 0, max = 1)
 ```
 
 
+```{r}
+p.2_1 <- ggplot() + 
+  geom_point(data = inund,
+             aes(x = (Dist_from_Berm),
+                 y = log(Inund_Height))) +
+  geom_path(data = pred.df.jm.2.1,
+            aes(x = Dist_Berm,
+                y = (pred_med),
+                group = dataset.ID)) +
+  geom_ribbon(data = pred.df.jm.2.1,
+              aes(x = Dist_Berm,
+                  ymin = (pred_low),
+                  ymax = (pred_high),
+                  group = dataset.ID),
+              alpha = 0.5) +
+  geom_ribbon(data = pred.df.jm.2.1,
+              aes(ymin = pred_med - median(sigma.y) * 2,
+                  ymax = pred_med + median(sigma.y) * 2,
+                  x = Dist_Berm,
+                  group = dataset.ID,
+                  fill = tide.order),
+              alpha = 0.4) +
+#  facet_grid(Year ~ Month_f)  +
+     geom_point(data = nest.data.2,
+              aes(x = Berm_Dist,
+                  y = log(Nest_Elevation + nest.full),
+                  color = as.factor(n.inund.full.month1)),
+              alpha = 0.5) +
+  facet_grid(Year ~ Month_f) + 
+  labs(title = "Predicted tide height and # inundation during first month") + 
+  guides(fill = FALSE) + 
+  scale_color_discrete(name = "# inund")
+
+p.2_1
+```
+
+
+```{r}
+p.2_2 <- ggplot() + 
+  geom_point(data = inund,
+             aes(x = (Dist_from_Berm),
+                 y = log(Inund_Height))) +
+  geom_path(data = pred.df.jm.2.1,
+            aes(x = Dist_Berm,
+                y = (pred_med),
+                group = dataset.ID)) +
+  geom_ribbon(data = pred.df.jm.2.1,
+              aes(x = Dist_Berm,
+                  ymin = (pred_low),
+                  ymax = (pred_high),
+                  group = dataset.ID),
+              alpha = 0.5) +
+  geom_ribbon(data = pred.df.jm.2.1,
+              aes(ymin = pred_med - median(sigma.y) * 2,
+                  ymax = pred_med + median(sigma.y) * 2,
+                  x = Dist_Berm,
+                  group = dataset.ID,
+                  fill = tide.order),
+              alpha = 0.4) +
+#  facet_grid(Year ~ Month_f)  +
+     geom_point(data = nest.data.2,
+              aes(x = Berm_Dist,
+                  y = log(Nest_Elevation + nest.full),
+                  color = as.factor(n.inund.full.month2)),
+              alpha = 0.5) +
+  facet_grid(Year ~ Month_f) + 
+  labs(title = "Predicted tide height and # inundation during second month") + 
+  guides(fill = FALSE) + 
+  scale_color_discrete(name = "# inund")
+
+p.2_2
+```
+
+
+
+```{r}
+p.2_3 <- ggplot() + 
+  geom_point(data = inund,
+             aes(x = (Dist_from_Berm),
+                 y = log(Inund_Height))) +
+  geom_path(data = pred.df.jm.2.1,
+            aes(x = Dist_Berm,
+                y = (pred_med),
+                group = dataset.ID)) +
+  geom_ribbon(data = pred.df.jm.2.1,
+              aes(x = Dist_Berm,
+                  ymin = (pred_low),
+                  ymax = (pred_high),
+                  group = dataset.ID),
+              alpha = 0.5) +
+  geom_ribbon(data = pred.df.jm.2.1,
+              aes(ymin = pred_med - median(sigma.y) * 2,
+                  ymax = pred_med + median(sigma.y) * 2,
+                  x = Dist_Berm,
+                  group = dataset.ID,
+                  fill = tide.order),
+              alpha = 0.4) +
+#  facet_grid(Year ~ Month_f)  +
+     geom_point(data = nest.data.2,
+              aes(x = Berm_Dist,
+                  y = log(Nest_Elevation + nest.full),
+                  color = as.factor(n.inund.full.month3)),
+              alpha = 0.5) +
+  facet_grid(Year ~ Month_f) + 
+  labs(title = "Predicted tide height and # inundation during third month") + 
+  guides(fill = FALSE) + 
+  scale_color_discrete(name = "# inund")
+
+p.2_3
+```
 
 Can we predict Phase_1_death with all possible variables using random forest?
 
@@ -342,9 +460,6 @@ M.1 <- as.formula("rate_success ~ Berm_Dist +
                   Nest_Elevation + 
                   Northings +
                   Eastings +
-                  n.inund.bottom.month1 + 
-                  n.inund.bottom.month2 + 
-                  n.inund.bottom.month3 + 
                   n.inund.half.month1 + 
                   n.inund.half.month2 + 
                   n.inund.half.month3 + 
@@ -394,7 +509,8 @@ ggplot(data = var.imp.df) +
         axis.title.x = element_text(size =12))
 ```
 
-Nest elevation, # inundation half way of the nest during the first months, and distance from the berm are important.
+Nest elevation, # inundation half way of the nest during the second and third months, and distance from the berm are important.
+
 
 Compare the data and predictions:
 
@@ -409,5 +525,84 @@ ggplot(data = nest.data.2) +
 
 ```
 
-About the same as the Phase 1 deaths... 
 
+```{r}
+fit.1 <- lm(rate_success_prediction ~ rate_success, data = nest.data.2)
+summary(fit.1)
+```
+
+How about Phase 1 deaths?
+
+
+```{r}
+M.2 <- as.formula("Phase_1_death ~ Berm_Dist + 
+                    Total_clutch +
+                  Year +
+                  Nest_Elevation + 
+                  Northings +
+                  Eastings +
+                 n.inund.half.month1 + 
+                  n.inund.half.month2 + 
+                  n.inund.half.month3 + 
+                  n.inund.full.month1 + 
+                  n.inund.full.month2 + 
+                  n.inund.full.month3 + 
+                  RV")
+
+if (!file.exists("RData/RF_M_2_out.rds")){
+  RF.M.2 <- cforest(formula = M.2,
+                    data = nest.data.2,
+                    control = cforest_unbiased(ntree = ntree,
+                                               trace = 500))
+  saveRDS(RF.M.2, file = "RData/RF_M_2_out.rds")
+} else {
+  RF.M.2 <- readRDS("RData/RF_M_2_out.rds")
+}
+
+if (!file.exists("RData/RF_M_2_varImp.rds")){
+  var.imp <- sort(varimp(RF.M.2), decreasing = FALSE)
+  saveRDS(var.imp, file = "RData/RF_M_2_varImp.rds")
+} else {
+  var.imp <- readRDS("RData/RF_M_2_varImp.rds")
+}
+
+if (!file.exists("RData/RF_M_2_predict.rds")){
+  pred.RF.M.2 <- predict(RF.M.2, newdata = NULL)
+  saveRDS(pred.RF.M.2, file = "RData/RF_M_2_predict.rds")
+} else {
+  pred.RF.M.2 <- readRDS("RData/RF_M_2_predict.rds")
+}
+```
+
+Look at the variable importance:
+```{r}
+var.imp.df <- data.frame(var.imp)
+var.imp.df$Variable <- rownames(var.imp.df)
+
+ggplot(data = var.imp.df) + 
+  geom_point(aes(x = var.imp, y = reorder(Variable, var.imp)),
+             size = 3) + 
+  theme_bw() + 
+  labs(x = "Variable importance") + 
+  theme(axis.title.y = element_blank(),
+        axis.title.x = element_text(size =12))
+```
+
+Compare the data and predictions:
+
+```{r}
+nest.data.2$Phase_1_death_prediction <- pred.RF.M.2[,1]
+ggplot(data = nest.data.2) +
+  geom_point(aes(x = Phase_1_death, y = Phase_1_death_prediction)) + 
+  geom_abline(slope = 1.0, intercept = 0.0) + 
+  #ylim(c(0, 1)) + 
+  labs(x = "Observed success rate", 
+       y = "Predicted success rate")
+
+```
+
+
+```{r}
+fit.2 <- lm(Phase_1_death_prediction ~ Phase_1_death, data = nest.data.2)
+summary(fit.2)
+```
