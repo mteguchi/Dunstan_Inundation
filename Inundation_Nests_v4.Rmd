@@ -285,8 +285,8 @@ pred.data.month3 <- predict.poly2.dataset.month(zm = jm.2,
 # and determine if the nest height was above the upper bound
 # look at bottom of the nest (Nest_Elevation + 0.01), half way up (Nest_Elevation + 0.3),
 # and all the way (Nest_Elevation + 0.6) (I made up 0.6 m so need a correct number.)
-nest.full <- 0.6
-nest.half <- 0.3
+nest.full <- 0.3
+nest.half <- 0.15
 
 n.inund.half <- n.inund.full  <- data.frame(Month1 = NA, Month2 = NA, Month3 = NA)
 k <- 1
@@ -332,7 +332,7 @@ nest.data.2$n.inund.full.month3 <- n.inund.full$Month3
 #nest.data.2 %>% na.omit() -> nest.data.2
 set.seed(12345)
 
-#write_csv(nest.data.2, path = "data/nest_data_inundation.csv")
+write_csv(nest.data.2, path = "data/nest_data_inundation.csv")
 
 nest.data.2$RV <- runif(n = nrow(nest.data.2), min = 0, max = 1)
 ```
@@ -509,7 +509,7 @@ ggplot(data = var.imp.df) +
         axis.title.x = element_text(size =12))
 ```
 
-Nest elevation, # inundation half way of the nest during the second and third months, and distance from the berm are important.
+
 
 
 Compare the data and predictions:
