@@ -17,7 +17,7 @@ For this version (v.4), I try to fulfill the following request from Owen Coffee 
 
 It turned out that he wanted me to fit multiple lines within each month - done in inundation_v4.Rmd. Results are brought in here. 
 
-Load essential libraries first.
+Load essential libraries.
 
 ```{r}
 rm(list=ls())
@@ -94,24 +94,24 @@ for (y in 1:2){
         select(tide.order, dataset.ID)  %>%
         rbind(tide.order) -> tide.order
         
-      #right_join(inund) 
-    
-      
   }
 }
 
-tide.order %>% na.omit() %>% right_join(inund, by = "dataset.ID") -> inund
+tide.order %>% 
+  na.omit() %>% 
+  right_join(inund, by = "dataset.ID") -> inund
 
 min.Dist <- min(inund$log_inund)
 sd.Dist <- sqrt(var(inund$log_inund))
 
 # create dataset vs. month/year look up table
 inund %>% 
-  select(dataset.ID, Month, Month2, Year2) %>% 
+  select(dataset.ID, Month, Month2, Year2, Date) %>% 
   group_by(dataset.ID) %>% 
   summarise(Month = first(Month), 
             Month2 = first(Month2),
-            Year2 = first(Year2)) %>%
+            Year2 = first(Year2),
+            first.date = first(Date)) %>%
   left_join(na.omit(tide.order))-> dataset_def 
 
 nest.cols <- cols(fid = col_integer(), 
@@ -144,8 +144,9 @@ nest.cols <- cols(fid = col_integer(),
 nest.data <- read_csv("data/hatchsuccess_inund.csv", 
                       col_types = nest.cols)
 
-nest.data %>% mutate(Year = ifelse(Date_laid < as.Date("2018-05-01"), 2018, 2019)) %>%
-  mutate(Month = month(Date_laid),
+nest.data %>% 
+  mutate(Year = ifelse(Date_laid < as.Date("2018-05-01"), 2018, 2019),
+         Month = month(Date_laid),
          Month2 = ifelse(Month > 9, Month - 9, Month + 3),
          Month_f = factor(Month, levels = c("10", "11", "12", "1", "2", "3", "4")),
          scaled_Dist_Berm = (log(Berm_Dist) - min.Dist)/sd.Dist,
@@ -163,27 +164,29 @@ y[i] ~ dnorm(mu.y[i], tau.y)
 
 Results of model fitting is saved in a .rds file (ran in inundation_Nests_v2.Rmd).
 ```{r}
-jags.data <- list(dataset.ID = inund$dataset.ID,
-                  y = inund$log_inund,
-                  month = inund$Month2,
-                  Dist_Berm = inund$Dist_from_Berm,
-                  year = inund$Year2,
-                  N = nrow(inund),
-                  n.dataset = length(unique(inund$dataset.ID)),
-                  n.years = length(unique(inund$Year2)),
-                  n.months = length(unique(inund$Month2)))
+jm.2 <- readRDS("RData/Poly2_dataset_month_year_aboveMed.rds")
 
-MCMC.params <- list(n.samples = 10000,
-                    n.burnin = 5000,
-                    n.thin = 5,
-                    n.chains = 5)
+jags.data <- jm.2$model$cluster1$data()
+# jags.data <- list(dataset.ID = inund$dataset.ID,
+#                   y = inund$log_inund,
+#                   month = inund$Month2,
+#                   Dist_Berm = inund$Dist_from_Berm,
+#                   year = inund$Year2,
+#                   N = nrow(inund),
+#                   n.dataset = length(unique(inund$dataset.ID)),
+#                   n.years = length(unique(inund$Year2)),
+#                   n.months = length(unique(inund$Month2)))
+
+MCMC.params <- list(n.samples = jm.2$mcmc.info$n.samples,
+                    n.burnin = jm.2$mcmc.info$n.burnin,
+                    n.thin = jm.2$mcmc.info$n.thin,
+                    n.chains = jm.2$mcmc.info$n.chains)
 
 #model.file = "models/Model_Poly2_month_year.txt")
 
 parameters <- c("b0", "b1", "b2", "b12", "sigma.y",
                  "fit", "fit.new", "deviance")
 
-jm.2 <- readRDS("RData/Poly2_dataset_month_year_aboveMed.rds")
 
 ```
 
@@ -250,18 +253,23 @@ We somewhat agreed on the following steps using these regression lines.
 
 OC: Yes, this is how I see it, my only question to point 3 would be that while we now have a better spread of heights across the month that may correspond with inundation events for the nests, do we not still need to develop a curve for each event to estimate the height of inundation along the beach profile for those nests not located in proximity to an inundation logger?
 
+OC: Katharine and I have looked back through the most recent incubation period results we have which include work done on Milman island and on Raine island in the last two nesting seasons. Both of these are suggesting an incubation period of approximately 50-52 days. For Raine island, the nests considered in this study for the 18-19 season had mean incubation periods of 49.1 days for October (range 47.5 - 55.5) and December  (range 48.1 - 51.1) and 51.7 days for nests laid in Feb (range 49.7 - 54.4). I think based on these results we could say with reasonable confidence that an incubation period of 50 days from the date laid in the nest file will encompass the majority of nests considered.
 
+So... we need to look at the date each nest was laid and dates of high tides. Also the duration of incubation should be changed to 50 days rather than 3 months that were used previously. 
+
+START HERE ON 2020-08-18
 ```{r}
 # find predicted inundation height at each observed nest
-nest.data %>% select(Month2, Year, Berm_Dist) %>%
+nest.data %>% select(Date_laid, Month2, Year, Berm_Dist) %>%
   mutate(Year = ifelse(Year == 2018, 1, 2),
-         Month_1 = Month2,
-         Month_2 = Month2 + 1,
-         Month_3 = Month2 + 2) -> new.data
+         Date_end = Date_laid + 50,
+         Month_begin = month(Date_laid),
+         Month_end = month(Date_end)) -> new.data
 
 new.data.1 <- new.data %>% transmute(Year = Year,
                                      Berm_Dist = Berm_Dist,
                                      Month = Month_1)
+
 pred.data.month1 <- predict.poly2.dataset.month(zm = jm.2, 
                                                 new.data = new.data.1, 
                                                 dataset_def = dataset_def)
