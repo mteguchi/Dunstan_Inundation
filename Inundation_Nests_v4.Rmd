@@ -257,37 +257,54 @@ OC: Katharine and I have looked back through the most recent incubation period r
 
 So... we need to look at the date each nest was laid and dates of high tides. Also the duration of incubation should be changed to 50 days rather than 3 months that were used previously. 
 
-START HERE ON 2020-08-18
 ```{r}
 # find predicted inundation height at each observed nest
-nest.data %>% select(Date_laid, Month2, Year, Berm_Dist) %>%
+nest.data %>% select(Nest_UID, Date_laid, Month2, Year, Berm_Dist) %>%
   mutate(Year = ifelse(Year == 2018, 1, 2),
          Date_end = Date_laid + 50,
+         Date_middle = Date_laid + 25,
          Month_begin = month(Date_laid),
-         Month_end = month(Date_end)) -> new.data
+         Month_end = month(Date_end),
+         Month_middle = month(Date_middle),
+         Month2_begin = ifelse(Month_begin > 9, Month_begin - 9, Month_begin + 3),
+         Month2_end = ifelse(Month_end > 9, Month_end - 9, Month_end + 3),
+         Month2_middle = ifelse(Month_end > 9, Month_end - 9, Month_end + 3)) -> new.data
 
-new.data.1 <- new.data %>% transmute(Year = Year,
-                                     Berm_Dist = Berm_Dist,
-                                     Month = Month_1)
+# predict for the first month - this may be disregarded if high tide was recorded
+# prior to nest deposition
+new.data.begin <- new.data %>% transmute(Year = Year,
+                                         Berm_Dist = Berm_Dist,
+                                         Month = Month2_begin,
+                                         Date_begin = Date_laid,
+                                         Date_end = Date_end)
 
-pred.data.month1 <- predict.poly2.dataset.month(zm = jm.2, 
-                                                new.data = new.data.1, 
-                                                dataset_def = dataset_def)
+pred.data.month.begin <- predict.poly2.dataset.month(zm = jm.2, 
+                                                     new.data = new.data.begin, 
+                                                     dataset_def = dataset_def)
 
-new.data.1 <- new.data %>% transmute(Year = Year,
-                                     Berm_Dist = Berm_Dist,
-                                     Month = Month_2)
-pred.data.month2 <- predict.poly2.dataset.month(zm = jm.2, 
-                                                new.data = new.data.1, 
-                                                dataset_def = dataset_def)
+new.data.middle <- new.data %>% transmute(Year = Year,
+                                          Berm_Dist = Berm_Dist,
+                                          Month = Month2_middle,
+                                          Date_begin = Date_laid,
+                                          Date_end = Date_end)
 
-new.data.1 <- new.data %>% transmute(Year = Year,
-                                     Berm_Dist = Berm_Dist,
-                                     Month = Month_3) 
+pred.data.month.middle <- predict.poly2.dataset.month(zm = jm.2, 
+                                                      new.data = new.data.middle, 
+                                                      dataset_def = dataset_def)
 
-pred.data.month3 <- predict.poly2.dataset.month(zm = jm.2, 
-                                                new.data = new.data.1, 
-                                                dataset_def = dataset_def)
+# new.data.end <- new.data %>% transmute(Year = Year,
+#                                        Berm_Dist = Berm_Dist,
+#                                        Month = Month2_end,
+#                                        Date_begin = Date_laid,
+#                                        Date_end = Date_end) 
+# 
+# pred.data.month.end <- predict.poly2.dataset.month(zm = jm.2, 
+#                                                    new.data = new.data.end, 
+#                                                    dataset_def = dataset_def)
+
+# determine whether each inundation event should be included based on when the nest was
+# laid and when the high tide occurred. 
+# This part was done in the function. 
 
 # figure out the approximate 95% intervals for data uncertainty at each nest 
 # and determine if the nest height was above the upper bound
@@ -296,51 +313,56 @@ pred.data.month3 <- predict.poly2.dataset.month(zm = jm.2,
 nest.full <- 0.3
 nest.half <- 0.15
 
-n.inund.half <- n.inund.full  <- data.frame(Month1 = NA, Month2 = NA, Month3 = NA)
+n.inund.half <- data.frame(Nest_UID = NA, n.half.Month.1 = NA, n.half.Month.2 = NA)
+n.inund.full  <- data.frame(Nest_UID = NA, n.full.Month.1 = NA, n.full.Month.2 = NA)
+
 k <- 1
-for(k in 1:length(pred.data.month1$pred.Y)){
-  median.heights.1 <- as.numeric(list2DF(pred.data.month1$qtiles[[k]])[2,])
-  upper.heights.1 <- median.heights.1 + (2 * median(sigma.y))  # sigma.y is from log scale
+for(k in 1:nrow(new.data)){
+  n.inund.full[k, "Nest_UID"] <- new.data$Nest_UID[k]
+  n.inund.half[k, "Nest_UID"] <- new.data$Nest_UID[k]
+  
+  # find which ones should be included - TRUE/FALSE
+  tides.in.begin <- pred.data.month.begin$data.idx[[k]]$tide.in
+  median.heights.begin <- as.numeric(list2DF(pred.data.month.begin$qtiles[[k]])[2, tides.in.begin])
+  upper.heights.begin <- median.heights.begin + (1.96 * median(sigma.y))  # sigma.y is from log scale
   nest.height <- as.numeric(log(nest.data[k, "Nest_Elevation"]))  # in log scale
   
-  #n.inund.bottom[k, "Month1"] <- sum(upper.heights.1 < (nest.height+0.01) & upper.heights.1 > nest.height)
-  n.inund.half[k, "Month1"] <- sum(upper.heights.1 > log(exp(nest.height) + nest.half))
-  n.inund.full[k, "Month1"] <- sum(upper.heights.1 > log(exp(nest.height) + nest.full) )
+  n.inund.half[k, "n.half.Month.1"] <- sum(upper.heights.begin > log(exp(nest.height) + nest.half), na.rm = T)
+  n.inund.full[k, "n.full.Month.1"] <- sum(upper.heights.begin > log(exp(nest.height) + nest.full), na.rm = T )
 
-  median.heights.2 <- as.numeric(list2DF(pred.data.month2$qtiles[[k]])[2,])
-  upper.heights.2 <- median.heights.2 + (2 * median(sigma.y))
-  #n.inund.bottom[k, "Month2"] <- sum(upper.heights.2 < (nest.height+0.01) & upper.heights.2 > nest.height)
-  n.inund.half[k, "Month2"] <- sum(upper.heights.2 > log(exp(nest.height) + nest.half) )
-  n.inund.full[k, "Month2"] <- sum(upper.heights.2 > log(exp(nest.height) + nest.full) )
+  # find which ones should be included - TRUE/FALSE
+  # This can be the same as the begin month...
+  if (new.data.begin[k, "Month"] != new.data.middle[k, "Month"]){  
+    tides.in.middle <- pred.data.month.middle$data.idx[[k]]$tide.in
+    median.heights.middle <- as.numeric(list2DF(pred.data.month.middle$qtiles[[k]])[2, tides.in.middle])
+    upper.heights.middle <- median.heights.middle + (1.96 * median(sigma.y))
+    n.inund.half[k, "n.half.Month.2"] <- sum(upper.heights.middle > log(exp(nest.height) + nest.half), na.rm = T )
+    n.inund.full[k, "n.full.Month.2"] <- sum(upper.heights.middle > log(exp(nest.height) + nest.full), na.rm = T )
+  }  
   
-  if (k <= length(pred.data.month3$pred.Y)){
-    median.heights.3 <- as.numeric(list2DF(pred.data.month3$qtiles[[k]])[2,])
-    upper.heights.3 <- median.heights.3 + (2 * median(sigma.y))
-    #n.inund.bottom[k, "Month3"] <- sum(upper.heights.3 < (nest.height+0.01) & upper.heights.3 > nest.height)
-    n.inund.half[k, "Month3"] <- sum(upper.heights.3 > log(exp(nest.height) + nest.half))
-    n.inund.full[k, "Month3"] <- sum(upper.heights.3 > log(exp(nest.height) + nest.full) )
-    
-  }
-  
+  # # find which ones should be included - TRUE/FALSE 
+  # # this can be the same as the middle month, so check that first
+  # if (new.data.middle[k, "Month"] != new.data.end[k, "Month"]){  
+  #   tides.in.end <- pred.data.month.end$data.idx[[k]]$tide.in
+  #   median.heights.end <- as.numeric(list2DF(pred.data.month.end$qtiles[[k]])[2, tides.in.end])
+  #   upper.heights.end <- median.heights.end + (1.96 * median(sigma.y))
+  #   n.inund.half[k, "Month.end"] <- sum(upper.heights.end > log(exp(nest.height) + nest.half), na.rm = T)
+  #   n.inund.full[k, "Month.end"] <- sum(upper.heights.end > log(exp(nest.height) + nest.full), na.rm = T )
+  # }
+
 }
 
-nest.data %>% select(fid, Nest_UID, Northings, Eastings, Nest_Elevation, Berm_Dist, Total_clutch, 
-                     Habitat, rate_success, Year, Month2, Habitat, Phase_1_death, Month_f)  -> nest.data.2
+# turns out Month.end were all NAs
 
-# nest.data.2$n.inund.bottom.month1 <- n.inund.bottom$Month1
-# nest.data.2$n.inund.bottom.month2 <- n.inund.bottom$Month2
-# nest.data.2$n.inund.bottom.month3 <- n.inund.bottom$Month3
-nest.data.2$n.inund.half.month1 <- n.inund.half$Month1
-nest.data.2$n.inund.half.month2 <- n.inund.half$Month2
-nest.data.2$n.inund.half.month3 <- n.inund.half$Month2
-nest.data.2$n.inund.full.month1 <- n.inund.full$Month1
-nest.data.2$n.inund.full.month2 <- n.inund.full$Month2
-nest.data.2$n.inund.full.month3 <- n.inund.full$Month3
+nest.data %>% select(fid, Nest_UID, Northings, Eastings, Nest_Elevation, Berm_Dist, Total_clutch, 
+                     Habitat, rate_success, Year, Month2, Habitat, Phase_1_death, Month_f) %>%
+  left_join(n.inund.full, by = "Nest_UID") %>%
+  left_join(n.inund.half, by = "Nest_UID") -> nest.data.2
+
+#write_csv(nest.data.2, path = "data/nest_data_inundation.csv")
 
 #nest.data.2 %>% na.omit() -> nest.data.2
 set.seed(12345)
-
-write_csv(nest.data.2, path = "data/nest_data_inundation.csv")
 
 nest.data.2$RV <- runif(n = nrow(nest.data.2), min = 0, max = 1)
 ```
@@ -372,7 +394,7 @@ p.2_1 <- ggplot() +
      geom_point(data = nest.data.2,
               aes(x = Berm_Dist,
                   y = log(Nest_Elevation + nest.full),
-                  color = as.factor(n.inund.full.month1)),
+                  color = as.factor(n.full.Month.1)),
               alpha = 0.5) +
   facet_grid(Year ~ Month_f) + 
   labs(title = "Predicted tide height and # inundation during first month") + 
@@ -409,7 +431,7 @@ p.2_2 <- ggplot() +
      geom_point(data = nest.data.2,
               aes(x = Berm_Dist,
                   y = log(Nest_Elevation + nest.full),
-                  color = as.factor(n.inund.full.month2)),
+                  color = as.factor(n.full.Month.2)),
               alpha = 0.5) +
   facet_grid(Year ~ Month_f) + 
   labs(title = "Predicted tide height and # inundation during second month") + 
@@ -420,42 +442,6 @@ p.2_2
 ```
 
 
-
-```{r}
-p.2_3 <- ggplot() + 
-  geom_point(data = inund,
-             aes(x = (Dist_from_Berm),
-                 y = log(Inund_Height))) +
-  geom_path(data = pred.df.jm.2.1,
-            aes(x = Dist_Berm,
-                y = (pred_med),
-                group = dataset.ID)) +
-  geom_ribbon(data = pred.df.jm.2.1,
-              aes(x = Dist_Berm,
-                  ymin = (pred_low),
-                  ymax = (pred_high),
-                  group = dataset.ID),
-              alpha = 0.5) +
-  geom_ribbon(data = pred.df.jm.2.1,
-              aes(ymin = pred_med - median(sigma.y) * 2,
-                  ymax = pred_med + median(sigma.y) * 2,
-                  x = Dist_Berm,
-                  group = dataset.ID,
-                  fill = tide.order),
-              alpha = 0.4) +
-#  facet_grid(Year ~ Month_f)  +
-     geom_point(data = nest.data.2,
-              aes(x = Berm_Dist,
-                  y = log(Nest_Elevation + nest.full),
-                  color = as.factor(n.inund.full.month3)),
-              alpha = 0.5) +
-  facet_grid(Year ~ Month_f) + 
-  labs(title = "Predicted tide height and # inundation during third month") + 
-  guides(fill = FALSE) + 
-  scale_color_discrete(name = "# inund")
-
-p.2_3
-```
 
 Can we predict Phase_1_death with all possible variables using random forest?
 
@@ -468,12 +454,10 @@ M.1 <- as.formula("rate_success ~ Berm_Dist +
                   Nest_Elevation + 
                   Northings +
                   Eastings +
-                  n.inund.half.month1 + 
-                  n.inund.half.month2 + 
-                  n.inund.half.month3 + 
-                  n.inund.full.month1 + 
-                  n.inund.full.month2 + 
-                  n.inund.full.month3 +
+                  n.half.Month.1 + 
+                  n.half.Month.2 + 
+                  n.full.Month.1 + 
+                  n.full.Month.2 +
                   RV")
 
 if (!file.exists("RData/RF_M_1_out.rds")){
@@ -549,12 +533,10 @@ M.2 <- as.formula("Phase_1_death ~ Berm_Dist +
                   Nest_Elevation + 
                   Northings +
                   Eastings +
-                 n.inund.half.month1 + 
-                  n.inund.half.month2 + 
-                  n.inund.half.month3 + 
-                  n.inund.full.month1 + 
-                  n.inund.full.month2 + 
-                  n.inund.full.month3 + 
+                  n.half.Month.1 + 
+                  n.half.Month.2 + 
+                  n.full.Month.1 + 
+                  n.full.Month.2 +
                   RV")
 
 if (!file.exists("RData/RF_M_2_out.rds")){

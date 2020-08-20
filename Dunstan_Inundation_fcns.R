@@ -341,7 +341,8 @@ predict.poly2.dataset.month <- function(zm, new.data, dataset_def){
   k <- 1
   for (k in 1:nrow(new.data)){
     dataset_def %>% filter(Month2 == new.data$Month[k] & Year2 ==  new.data$Year[k]) %>%
-      select(dataset.ID, tide.order, Year2) %>%
+      select(dataset.ID, tide.order, Year2, first.date) %>%
+      mutate(tide.in = first.date >= new.data$Date_begin[k] & first.date <= new.data$Date_end[k]) %>%
       arrange(by = tide.order) -> b0.idx 
 
     data.idx[[k]] <- b0.idx
@@ -361,8 +362,8 @@ predict.poly2.dataset.month <- function(zm, new.data, dataset_def){
     pred.Y[[k]] <- pred.Y.k1
     # get quantiles
     qtiles[[k]] <- lapply(pred.Y[[k]], 
-                     FUN = quantile, c(0.025, 0.5, 0.975),
-                     na.rm = T)
+                          FUN = quantile, c(0.025, 0.5, 0.975),
+                          na.rm = T)
     
   }
   
