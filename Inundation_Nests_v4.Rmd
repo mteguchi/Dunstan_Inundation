@@ -354,12 +354,15 @@ for(k in 1:nrow(new.data)){
 
 # turns out Month.end were all NAs
 
-nest.data %>% select(fid, Nest_UID, Northings, Eastings, Nest_Elevation, Berm_Dist, Total_clutch, 
-                     Habitat, rate_success, Year, Month2, Habitat, Phase_1_death, Month_f) %>%
+nest.data %>% select(fid, Nest_UID, Date_laid, Northings, Eastings, 
+                     Nest_Elevation, Berm_Dist, Total_clutch, 
+                     Habitat, rate_success, Year, Month2, 
+                     Habitat, Phase_1_death, Month_f) %>%
+  mutate(Date_end = Date_laid + 50) %>%
   left_join(n.inund.full, by = "Nest_UID") %>%
   left_join(n.inund.half, by = "Nest_UID") -> nest.data.2
 
-#write_csv(nest.data.2, path = "data/nest_data_inundation.csv")
+write_csv(nest.data.2, path = "data/nest_data_inundation.csv")
 
 #nest.data.2 %>% na.omit() -> nest.data.2
 set.seed(12345)
