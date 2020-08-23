@@ -103,7 +103,7 @@ inund %>%
             Year2 = first(Year2)) -> dataset_def 
 ```
 
-Explore data with making some plots. In the previous data exploiration, I found that variability among transects is quite small. So, I can pool them to model. 
+Explore data with making some plots. In the previous data exploration, I found that variability among transects is quite small. So, I can pool them to model. 
 
 
 ```{r}

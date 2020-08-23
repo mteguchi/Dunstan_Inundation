@@ -229,12 +229,12 @@ p.1 <- ggplot() +
                   group = dataset.ID,
                   fill = tide.order),
               alpha = 0.4) +
-  facet_grid(Year ~ Month_f)  +
-     geom_point(data = nest.data,
-              aes(x = Berm_Dist,
-                  y = log(Nest_Elevation),
-                  color = rate_success),
-              alpha = 0.5) +
+  #  facet_grid(Year ~ Month_f)  +
+  geom_point(data = nest.data,
+             aes(x = Berm_Dist,
+                 y = log(Nest_Elevation),
+                 color = rate_success),
+             alpha = 0.5) +
   facet_grid(Year ~ Month_f) + 
   labs(title = "Predicted inundation height and success rate")
 
@@ -257,9 +257,11 @@ OC: Katharine and I have looked back through the most recent incubation period r
 
 So... we need to look at the date each nest was laid and dates of high tides. Also the duration of incubation should be changed to 50 days rather than 3 months that were used previously. 
 
+To visualize how many high tides the observed nests encountered, I look at the timeseries of events; nests laid, high tides, and end of incubation against measured height. 
+
 ```{r}
 # find predicted inundation height at each observed nest
-nest.data %>% select(Nest_UID, Date_laid, Month2, Year, Berm_Dist) %>%
+nest.data %>% select(Nest_UID, Date_laid, Month2, Year, Berm_Dist, Nest_Elevation) %>%
   mutate(Year = ifelse(Year == 2018, 1, 2),
          Date_end = Date_laid + 50,
          Date_middle = Date_laid + 25,
@@ -269,6 +271,29 @@ nest.data %>% select(Nest_UID, Date_laid, Month2, Year, Berm_Dist) %>%
          Month2_begin = ifelse(Month_begin > 9, Month_begin - 9, Month_begin + 3),
          Month2_end = ifelse(Month_end > 9, Month_end - 9, Month_end + 3),
          Month2_middle = ifelse(Month_end > 9, Month_end - 9, Month_end + 3)) -> new.data
+
+p.2 <- ggplot() + 
+  geom_point(data = inund,
+             aes(x = Date,
+                 y = Dist_from_Berm,
+                 color = log(Inund_Height)),
+             alpha = 0.2) +
+  geom_segment(data = new.data,
+             aes(x = Date_laid,
+                 y = Berm_Dist,
+                 xend = Date_end,
+                 yend = Berm_Dist,
+                 color = log(Nest_Elevation))) +
+  #facet_grid(Year ~ .)  +
+  labs(title = "Observed inundation heights and nest heights")
+
+p.2
+```
+
+Difficult to visualize whether a particular nest was above or below the inundation height (this one does not take into account the data uncertainty). 
+
+
+```{r}
 
 # predict for the first month - this may be disregarded if high tide was recorded
 # prior to nest deposition
@@ -315,16 +340,21 @@ nest.half <- 0.15
 
 n.inund.half <- data.frame(Nest_UID = NA, n.half.Month.1 = NA, n.half.Month.2 = NA)
 n.inund.full  <- data.frame(Nest_UID = NA, n.full.Month.1 = NA, n.full.Month.2 = NA)
+upper.tide.heights <- data.frame(Nest_UID = NA, upper.begin = NA, upper.middle = NA)
 
 k <- 1
 for(k in 1:nrow(new.data)){
   n.inund.full[k, "Nest_UID"] <- new.data$Nest_UID[k]
   n.inund.half[k, "Nest_UID"] <- new.data$Nest_UID[k]
-  
-  # find which ones should be included - TRUE/FALSE
+  upper.tide.heights[k, "Nest_UID"] <- new.data$Nest_UID[k]
+
+  # find which ones should be included w.r.t. date - TRUE/FALSE
   tides.in.begin <- pred.data.month.begin$data.idx[[k]]$tide.in
   median.heights.begin <- as.numeric(list2DF(pred.data.month.begin$qtiles[[k]])[2, tides.in.begin])
   upper.heights.begin <- median.heights.begin + (1.96 * median(sigma.y))  # sigma.y is from log scale
+  upper.tide.heights[k, "upper.begin"] <- ifelse(length(median.heights.begin) > 0, 
+                                                 max(upper.heights.begin), NA)
+  
   nest.height <- as.numeric(log(nest.data[k, "Nest_Elevation"]))  # in log scale
   
   n.inund.half[k, "n.half.Month.1"] <- sum(upper.heights.begin > log(exp(nest.height) + nest.half), na.rm = T)
@@ -336,6 +366,8 @@ for(k in 1:nrow(new.data)){
     tides.in.middle <- pred.data.month.middle$data.idx[[k]]$tide.in
     median.heights.middle <- as.numeric(list2DF(pred.data.month.middle$qtiles[[k]])[2, tides.in.middle])
     upper.heights.middle <- median.heights.middle + (1.96 * median(sigma.y))
+    upper.tide.heights[k, "upper.middle"] <- ifelse(length(median.heights.middle) > 0,
+                                                    max(upper.heights.middle), NA)
     n.inund.half[k, "n.half.Month.2"] <- sum(upper.heights.middle > log(exp(nest.height) + nest.half), na.rm = T )
     n.inund.full[k, "n.full.Month.2"] <- sum(upper.heights.middle > log(exp(nest.height) + nest.full), na.rm = T )
   }  
@@ -356,13 +388,18 @@ for(k in 1:nrow(new.data)){
 
 nest.data %>% select(fid, Nest_UID, Date_laid, Northings, Eastings, 
                      Nest_Elevation, Berm_Dist, Total_clutch, 
-                     Habitat, rate_success, Year, Month2, 
+                     rate_success, Year, Month2, 
                      Habitat, Phase_1_death, Month_f) %>%
   mutate(Date_end = Date_laid + 50) %>%
   left_join(n.inund.full, by = "Nest_UID") %>%
-  left_join(n.inund.half, by = "Nest_UID") -> nest.data.2
+  left_join(n.inund.half, by = "Nest_UID") %>%
+  left_join(upper.tide.heights, by = "Nest_UID") %>%
+  mutate(dif.nest.tide.begin = Nest_Elevation - exp(upper.begin),
+         dif.nest.tide.middle = Nest_Elevation - exp(upper.middle),
+         dif.nest.tide.begin.log = log(Nest_Elevation) - upper.begin,
+         dif.nest.tide.middle.log = log(Nest_Elevation) - upper.middle) -> nest.data.2
 
-write_csv(nest.data.2, path = "data/nest_data_inundation.csv")
+#write_csv(nest.data.2, path = "data/nest_data_inundation.csv")
 
 #nest.data.2 %>% na.omit() -> nest.data.2
 set.seed(12345)
@@ -370,6 +407,25 @@ set.seed(12345)
 nest.data.2$RV <- runif(n = nrow(nest.data.2), min = 0, max = 1)
 ```
 
+Plot nest heights and upper tide heights during incubation.
+
+```{r}
+p.1.1 <- ggplot() +
+  geom_point(data = nest.data.2,
+             aes(x = Date_laid,
+                 y = dif.nest.tide.begin),
+             color = "red") + 
+  geom_point(data = nest.data.2,
+             aes(x = Date_laid + 25,
+                 y = dif.nest.tide.middle),
+             color = "orange") +
+  geom_hline(yintercept = -0.3, color = "darkblue") +
+  geom_hline(yintercept = -0.15, color = "lightblue")
+
+p.1.1
+```
+
+Not good because the distance from the berm is not incorporated into this plot... 
 
 ```{r}
 p.2_1 <- ggplot() + 
@@ -397,12 +453,13 @@ p.2_1 <- ggplot() +
      geom_point(data = nest.data.2,
               aes(x = Berm_Dist,
                   y = log(Nest_Elevation + nest.full),
-                  color = as.factor(n.full.Month.1)),
+                  color = dif.nest.tide.begin),
               alpha = 0.5) +
   facet_grid(Year ~ Month_f) + 
   labs(title = "Predicted tide height and # inundation during first month") + 
-  guides(fill = FALSE) + 
-  scale_color_discrete(name = "# inund")
+  guides(fill = FALSE) +
+  scale_color_continuous(type = "viridis")
+  #scale_color_discrete(name = "# inund")
 
 p.2_1
 ```
@@ -434,16 +491,25 @@ p.2_2 <- ggplot() +
      geom_point(data = nest.data.2,
               aes(x = Berm_Dist,
                   y = log(Nest_Elevation + nest.full),
-                  color = as.factor(n.full.Month.2)),
+                  color = dif.nest.tide.middle),
+                  #color = as.factor(n.full.Month.2)),
               alpha = 0.5) +
   facet_grid(Year ~ Month_f) + 
   labs(title = "Predicted tide height and # inundation during second month") + 
   guides(fill = FALSE) + 
-  scale_color_discrete(name = "# inund")
+  #scale_color_discrete(name = "# inund")
+  scale_color_continuous(type = "viridis")
 
 p.2_2
 ```
 
+Those nests that were not exposed to high tides get a large value so we can remove NAs (gray circles).
+
+```{r}
+nest.data.2 %>% 
+
+
+```
 
 
 Can we predict Phase_1_death with all possible variables using random forest?
