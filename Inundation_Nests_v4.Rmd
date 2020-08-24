@@ -277,7 +277,7 @@ p.2 <- ggplot() +
              aes(x = Date,
                  y = Dist_from_Berm,
                  color = log(Inund_Height)),
-             alpha = 0.2) +
+             alpha = 0.7) +
   geom_segment(data = new.data,
              aes(x = Date_laid,
                  y = Berm_Dist,
@@ -285,7 +285,8 @@ p.2 <- ggplot() +
                  yend = Berm_Dist,
                  color = log(Nest_Elevation))) +
   #facet_grid(Year ~ .)  +
-  labs(title = "Observed inundation heights and nest heights")
+  labs(title = "Observed inundation and nest heights") +
+  ylab("Distance from berm")
 
 p.2
 ```
@@ -399,7 +400,7 @@ nest.data %>% select(fid, Nest_UID, Date_laid, Northings, Eastings,
          dif.nest.tide.begin.log = log(Nest_Elevation) - upper.begin,
          dif.nest.tide.middle.log = log(Nest_Elevation) - upper.middle) -> nest.data.2
 
-#write_csv(nest.data.2, path = "data/nest_data_inundation.csv")
+write_csv(nest.data.2, path = "data/nest_data_inundation.csv")
 
 #nest.data.2 %>% na.omit() -> nest.data.2
 set.seed(12345)
@@ -413,19 +414,29 @@ Plot nest heights and upper tide heights during incubation.
 p.1.1 <- ggplot() +
   geom_point(data = nest.data.2,
              aes(x = Date_laid,
-                 y = dif.nest.tide.begin),
-             color = "red") + 
+                 y = dif.nest.tide.begin,
+                 size = Berm_Dist),
+             shape = 1, #15,
+             #size = 2,
+             alpha = 0.7) + 
   geom_point(data = nest.data.2,
              aes(x = Date_laid + 25,
-                 y = dif.nest.tide.middle),
-             color = "orange") +
+                 y = dif.nest.tide.middle,
+                 size = Berm_Dist),
+             shape = 2, #16,
+             #size = 2,
+             alpha = 0.7) +
+  scale_color_continuous(type = "viridis") +
   geom_hline(yintercept = -0.3, color = "darkblue") +
-  geom_hline(yintercept = -0.15, color = "lightblue")
+  geom_hline(yintercept = -0.15, color = "lightblue") + 
+  labs(title = "Difference between tide and nest heights") + 
+  ylab("Nest height - tide height") +
+  xlab("Date laid")
 
 p.1.1
 ```
 
-Not good because the distance from the berm is not incorporated into this plot... 
+Not perfect because the distance from the berm is not incorporated into this plot... 
 
 ```{r}
 p.2_1 <- ggplot() + 
