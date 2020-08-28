@@ -517,7 +517,7 @@ p.2_2
 Those nests that were not exposed to high tides get a large value so we can remove NAs (gray circles).
 
 ```{r}
-nest.data.2 %>% 
+#nest.data.2 %>% 
 
 
 ```
