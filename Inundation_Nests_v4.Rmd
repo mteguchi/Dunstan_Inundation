@@ -141,7 +141,9 @@ nest.cols <- cols(fid = col_integer(),
                   Season_Peakpop = col_integer())
 
 # the following file was created from revised data from Owen Coffee (nest_inund_prediction_OCedits.csv).
-nest.data <- read_csv("data/hatchsuccess_inund.csv", 
+# 2020-08-29: A new file was created because there were duplicate of Nest_UID = 1712-285. The second one
+# was renamed to 1712-286. 
+nest.data <- read_csv("data/hatchsuccess_inund_2020-08-28.csv", 
                       col_types = nest.cols)
 
 nest.data %>% 
