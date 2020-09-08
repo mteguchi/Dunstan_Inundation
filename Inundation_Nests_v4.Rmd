@@ -41,7 +41,7 @@ inund.cols <- cols(
    Transect = col_double(),
    Post = col_double(),
    Date = col_date(format = "%d/%m/%Y"),
-   Time = col_time(format = "%H:%M:%S %p"),
+   Time = col_time(format = "%H:%M:%S %p"), 
    Aspect = col_character(),
    Survey_Date = col_character(),
    Inundation_Month = col_character(),
