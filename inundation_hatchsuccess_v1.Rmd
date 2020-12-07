@@ -1,0 +1,161 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+In this document I describe the analysis that was requested by Andy Dunstan on a conference call on Sept 24, 2020. The purpose of this analysis is to (1) identify the number of inundations each nest experienced, (2) determine the duration of these inundation events, (3) determine the phase of incubation at these inundation events, and (4) determine the maximum tidal height and total duration at that maximum height of each inundation event. These bullet items were provided in the email from Owen Coffee on Oct 2, 2020. Nine files were attached to the email. The hatch success data were in hatchsuccess_inund_2020-10-02.csv, whereas raw data from tidal height data loggers were in Loggerx_y.csv files, where x and y specified individual loggers. 
+
+
+```{r}
+# clear the workspace and bring in libraries
+rm(list=ls())
+library(ggplot2)
+library(tidyverse)
+library(readr)
+library(lubridate)
+
+source("Dunstan_Inundation_fcns.R")
+```
+
+Bring in all data files and take a look at them.
+
+```{r}
+# The last five fields (Number_inundation_events to Duration_max_inundation) are empty.
+# I changed "%_success" to "prop_success".
+
+inund.cols <- cols(fid = col_integer(),
+                   Nest_UID = col_character(),
+                   Northings = col_double(),
+                   Eastings = col_double(),
+                   Nest_Elevation = col_double(),
+                   Berm_Dist = col_double(),
+                   Habitat = col_character(),
+                   Sector = col_character(),
+                   Island_Aspect = col_character(),
+                   ID_closest_logger = col_character(),
+                   Season = col_character(),
+                   Survey = col_character(),
+                   Incubation_Start = col_date(format = "%d/%m/%Y"),
+                   Incubation_Finish = col_date(format = "%d/%m/%Y"),
+                   Date_dug = col_date(format = "%d/%m/%Y"),
+                   Hatched = col_integer(),
+                   Live_hatchlings = col_integer(),
+                   Dead_hatchlings = col_integer(),
+                   Phase_1 = col_integer(),
+                   Phase_2 = col_integer(),
+                   Phase_3 = col_integer(),
+                   Phase_4 = col_integer(),
+                   Phase_5 = col_integer(),
+                   Phase_6 = col_integer(),
+                   Decomposed = col_integer(),
+                   Total_unhatched = col_integer(),
+                   Total_clutch = col_integer(),
+                   prop_success = col_double(),
+                   Number_inundation_events = col_integer(),
+                   Inundation_period_per_event = col_integer(),
+                   Phase_incubation_per_inundation = col_integer(),
+                   Max_inundation_height_event = col_double(),
+                   Duration_max_inundation = col_double())
+
+# I changed column headings 
+logger.cols <- cols(Logger_Depth = col_double(),
+                    Date_Time = col_datetime(format = "%d/%m/%Y %H:%M"),
+                    Height_LAT = col_double())
+
+inund <- read_csv("data/hatchsuccess_inund_2020-10-02_TE.csv", 
+                  col_types = inund.cols)
+
+logger.3.2 <- read_csv("data/Logger3_2.csv",
+                       col_types = logger.cols) %>%
+  mutate(Logger_ID = "3.2",
+         Logger_Depth = min(Logger_Depth, na.rm = TRUE),
+         Date = as.Date(Date_Time, format = "%Y-%m-%d"))
+logger.4.1 <- read_csv("data/Logger4_1.csv",
+                       col_types = logger.cols) %>%
+  mutate(Logger_ID = "4.1",
+         Logger_Depth = min(Logger_Depth, na.rm = TRUE),
+         Date = as.Date(Date_Time, format = "%Y-%m-%d"))
+logger.4.2 <- read_csv("data/Logger4_2.csv",
+                       col_types = logger.cols) %>%
+  mutate(Logger_ID = "4.2",
+         Logger_Depth = min(Logger_Depth, na.rm = TRUE),
+         Date = as.Date(Date_Time, format = "%Y-%m-%d"))
+logger.4.3 <- read_csv("data/Logger4_3.csv",
+                       col_types = logger.cols) %>%
+  mutate(Logger_ID = "4.3",
+         Logger_Depth = min(Logger_Depth, na.rm = TRUE),
+         Date = as.Date(Date_Time, format = "%Y-%m-%d"))
+logger.4.4 <- read_csv("data/Logger4_4.csv",
+                       col_types = logger.cols) %>%
+  mutate(Logger_ID = "4.4",
+         Logger_Depth = min(Logger_Depth, na.rm = TRUE),
+         Date = as.Date(Date_Time, format = "%Y-%m-%d"))
+logger.5.1 <- read_csv("data/Logger5_1.csv",
+                       col_types = logger.cols) %>%
+  mutate(Logger_ID = "5.1",
+         Logger_Depth = min(Logger_Depth, na.rm = TRUE),
+         Date = as.Date(Date_Time, format = "%Y-%m-%d"))
+logger.5.2 <- read_csv("data/Logger5_2.csv",
+                       col_types = logger.cols) %>%
+  mutate(Logger_ID = "5.2",
+         Logger_Depth = min(Logger_Depth, na.rm = TRUE),
+         Date = as.Date(Date_Time, format = "%Y-%m-%d"))
+logger.5.4 <- read_csv("data/Logger5_4.csv",
+                       col_types = logger.cols) %>%
+  mutate(Logger_ID = "5.4",
+         Logger_Depth = min(Logger_Depth, na.rm = TRUE),
+         Date = as.Date(Date_Time, format = "%Y-%m-%d"))
+loggers <- rbind(logger.3.2, logger.4.1, logger.4.2, logger.4.3,
+                logger.4.4, logger.5.1, logger.5.2, logger.5.4)
+```
+
+Look at the data:
+
+```{r}
+p.tide <- ggplot(data = loggers) + 
+  geom_path(aes(x = Date_Time, y = Height_LAT),
+            alpha = 0.5) + 
+  facet_wrap(~ as.factor(Logger_ID))
+
+#p.tide
+```
+
+For each nest (row) in inund, data from one logger are assigned (ID_closest_logger). The tide height relative to the nest height is examined.
+
+```{r}
+
+k <- 1
+for (k in 1:nrow(inund)){
+  # in tibble, a variable needs to be pulled to get out of the tibble format
+  # 'pull' does that trick.
+  inund.k <- inund[k,]
+  logger.id <- pull(inund.k, "ID_closest_logger")
+  date.begin <- pull(inund.k, "Incubation_Start")
+  date.end <- pull(inund.k, "Incubation_Finish")
+  
+  nest.depth <- inund[k, "Nest_Elevation"]
+  
+  loggers %>% 
+    filter(str_detect(Logger_ID, as.character(logger.id))) %>%
+    filter(Date >= date.begin & 
+             Date <= date.end) -> logger.k
+  
+  inund.nest <- filter(logger.k, Height_LAT > nest.depth)
+  
+  if (nrow(inund.nest) > 0){
+    print(paste0("inundation at nest ", k))
+    
+    p.inund <- ggplot() +
+      geom_path(data = logger.k,
+                aes(x = Date_Time, y = Height_LAT)) +
+      geom_hline(data = inund.k,
+                 aes(yintercept = Nest_Elevation)) +
+      ggtitle(paste0("Nest_UID = ", inund.k$Nest_UID))
+    
+    ggsave(filename = paste0("figures/inundation_nest_", inund.k$Nest_UID, ".png"),
+                             device = "png", dpi = 600)
+  }            
+}
+
+```
+
