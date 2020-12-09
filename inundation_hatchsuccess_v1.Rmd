@@ -15,7 +15,7 @@ library(readr)
 library(lubridate)
 
 source("Dunstan_Inundation_fcns.R")
-save.fig <- F
+save.fig <- T
 ```
 
 Bring in all data files and take a look at them.
@@ -144,20 +144,24 @@ for (k in 1:nrow(inund)){
   inund.nest <- filter(logger.k, Height_LAT > nest.depth)
   
   if (nrow(inund.nest) > 0){
-    print(paste0("inundation at nest ", k))
+    #print(paste0("inundation at nest ", k))
     inundated.nests[[c]] <- list(logger.data = logger.k,
-                                 nest.depth = nest.depth)
+                                 nest.depth = nest.depth,
+                                 logger.ID = logger.id,
+                                 nest.ID = inund.k$Nest_UID,
+                                 date.begin = date.begin,
+                                 date.end = date.end)
     
-    p.inund <- ggplot() +
-      geom_path(data = logger.k,
-                aes(x = Date_Time, y = Height_LAT)) +
-      geom_hline(data = inund.k,
-                 aes(yintercept = Nest_Elevation)) +
-      ggtitle(paste0("Nest_UID = ", inund.k$Nest_UID))
-    
-    if (save.fig) ggsave(filename = paste0("figures/inundation_nest_", inund.k$Nest_UID, ".png"),
-                         device = "png", dpi = 600)
-    
+    # p.inund <- ggplot() +
+    #   geom_path(data = logger.k,
+    #             aes(x = Date_Time, y = Height_LAT)) +
+    #   geom_hline(data = inund.k,
+    #              aes(yintercept = Nest_Elevation)) +
+    #   ggtitle(paste0("Nest_UID = ", inund.k$Nest_UID))
+    # 
+    # if (save.fig) ggsave(filename = paste0("figures/inundation_nest_", inund.k$Nest_UID, ".png"),
+    #                      device = "png", dpi = 600)
+    # 
     c <- c + 1
   }            
 }
@@ -168,31 +172,37 @@ According to the plots, it was almost all-or-nothing. I asked Andy and Owen if I
 
 Moving on with inundated nests... figuring out how many times each nest was inundated, how long each inundation event was, phase of incubation of each inundation event, maximum water height per inundation event, the duration of the highest inundation event.
 
-ADD NEST ID, INUNDATION EVENT ID IN OUTPUT. RECONSTRUCT THE LIST WITH NEW LOGGER.K AND LOGGER.K.INUND.
-2020-12-08
+
 ```{r}
 # for each reading of logger, determine whether or not the nest height was greater (not inundated) than the water height (Height_LAT).
 k1 <- 1
 for (k1 in 1:length(inundated.nests)){
   logger.k <- inundated.nests[[k1]]$logger.data
   nest.depth <- inundated.nests[[k1]]$nest.depth
-  
+  nest.ID <-  inundated.nests[[k1]]$nest.ID
+  logger.ID <- inundated.nests[[k1]]$logger.ID
+  date.begin <- inundated.nests[[k1]]$date.begin
+  date.end <- inundated.nests[[k1]]$date.end
+    
+  total.days <- as.numeric(date.end - date.begin)
   logger.k %>% mutate(inund = ifelse(Height_LAT >= nest.depth, 1, 0)) -> logger.k
-
+  # extract the inundation recordings
+  logger.k %>% filter(inund == 1) -> logger.k.inund 
+    
   # if the nest was entirely underwater, no need to figure out how many times it was inundated
   if (sum(logger.k$inund) == nrow(logger.k)){
-    inundated.nests[[k1]]$n.inund <- 1
-    inundated.nests[[k1]]$time.inund <- logger.k$Date_Time[nrow(logger.k)] -
-                                                        logger.k$Date_Time[1]
-    inundated.nests[[k1]]$max.height <- max(logger.k$Height_LAT)
-    inundated.nests[[k1]]$phase <- NA
-    inundated.nests[[k1]]$days.max.inund <- NA
+    n.inund <- 1
+    logger.k.inund$inund.ID <- 1
+    time.inund <- logger.k$Date_Time[nrow(logger.k)] - logger.k$Date_Time[1]
+    time.inund.unit <- units(logger.k$Date_Time[nrow(logger.k)] - logger.k$Date_Time[1])
+    max.height <- max(logger.k$Height_LAT)
+    inund.time <- NA
+    inund.time.unit <- NA
+    inund.phase <- NA
+    inund.phase.unit <- NA
+    days.max.inund <- NA
     
   } else {  # if there were at least one un-inundated reading, we need to figure out inundation events
-    #duration.inund <- vector(mode = "numeric")
-    
-    # extract the inundation recordings
-    logger.k %>% filter(inund == 1) -> logger.k.inund 
     
     if (nrow(logger.k.inund) > 1){
       # compute the time differences - look for those > 15 min
@@ -204,44 +214,86 @@ for (k1 in 1:length(inundated.nests)){
       tmp <- cumsum(tmp) + 1
       logger.k.inund$inund.ID <- tmp
       n.inund <- max(tmp)
-      inundated.nests[[k1]]$n.inund <- n.inund
       
       # compute the inundation statistics for each inundation event
       time.inund <- vector(mode = "numeric", length = n.inund)
       time.inund.unit <- vector(mode = "character", length = n.inund)
-      inundated.nests[[k1]]$max.height <- max(logger.k.inund$Height_LAT)
+
       # Rather than "phase" I use # days from start date
-      inund.phase <- vector(mode = "numeric", length = n.inund)
-      inund.phase.unit <- vector(mode = "character", length = n.inund)
+      inund.time <- vector(mode = "numeric", length = n.inund)
+      inund.time.unit <- vector(mode = "character", length = n.inund)
+      
+      max.height <- vector(mode = "numeric", length = n.inund)
+
       k3 <- 1
       
       for (k3 in 1:n.inund){
         inund.tmp <- filter(logger.k.inund, inund.ID == k3)
         time.inund[k3] <- inund.tmp$Date_Time[nrow(inund.tmp)] - inund.tmp$Date_Time[1]
         time.inund.unit[k3] <- units(inund.tmp$Date_Time[nrow(inund.tmp)] - inund.tmp$Date_Time[1])
-        inund.phase[k3] <- inund.tmp$Date_Time[nrow(inund.tmp)] - logger.k$Date_Time[1]
-        inund.phase.unit[k3] <- units(inund.tmp$Date_Time[nrow(inund.tmp)] - logger.k$Date_Time[1])
+        inund.time[k3] <- inund.tmp$Date_Time[nrow(inund.tmp)] - logger.k$Date_Time[1]
+        inund.time.unit[k3] <- units(inund.tmp$Date_Time[nrow(inund.tmp)] - logger.k$Date_Time[1])
+        max.height[k3] <- max(inund.tmp$Height_LAT)
       }
       
-      inundated.nests[[k1]]$time.inund <- time.inund
-      inundated.nests[[k1]]$time.inund.unit <- time.inund.unit
-      inundated.nests[[k1]]$inund.phase <- inund.phase
-      inundated.nests[[k1]]$inund.phase.unit <- inund.phase.unit
-      inundated.nests[[k1]]$days.max.inund <- NA
+      days.max.inund <- NA
       
     } else {
-      inundated.nests[[k1]]$max.height <- logger.k.inund$Height_LAT
-      inundated.nests[[k1]]$n.inund <- 1
-      inundated.nests[[k1]]$time.inund <- 29
-      inundated.nests[[k1]]$time.inund.unit <- "minute"
-      inundated.nests[[k1]]$inund.phase <- logger.k.inund$Date_Time - logger.k$Date_Time[1]
-      inundated.nests[[k1]]$inund.phase.unit <- units(logger.k.inund$Date_Time - logger.k$Date_Time[1])
-      inundated.nests[[k1]]$days.max.inund <- NA
+      max.height <- logger.k.inund$Height_LAT
+      n.inund <- 1
+      logger.k.inund$inund.ID <- 1
+      time.inund <- 29
+      time.inund.unit <- "minute"
+      inund.time <- logger.k.inund$Date_Time - logger.k$Date_Time[1]
+      inund.time.unit <- units(logger.k.inund$Date_Time - logger.k$Date_Time[1])
+      days.max.inund <- NA
       
     }
     
-  }  
+  }
+  
+  inundated.nests[[k1]] <- list(nest.ID = nest.ID,
+                                logger.ID = logger.ID,
+                                date.begin = date.begin,
+                                date.end = date.end, 
+                                logger.data = logger.k,
+                                logger.inund.data = logger.k.inund,
+                                nest.depth = nest.depth,
+                                max.height = max.height,
+                                n.inund = n.inund,
+                                time.inund = time.inund,
+                                time.inund.unit = time.inund.unit,
+                                inund.phase = inund.phase,
+                                inund.phase.unit = inund.phase.unit,
+                                days.max.inund = days.max.inund)
 }
 ```
 
+
+Let's make some plots to see how they look.
+
+```{r}
+k <- 2
+for (k in 1:length(inundated.nests)){
+  
+  p.inund <- ggplot() +
+    geom_path(data = inundated.nests[[k]]$logger.data,
+              aes(x = Date_Time, y = Height_LAT)) +
+    geom_path(data = inundated.nests[[k]]$logger.inund.data,
+              aes(x = Date_Time, y = Height_LAT, color = as.factor(inund.ID))) +
+    geom_hline(data = data.frame(nest.depth = inundated.nests[[k]]$nest.depth),
+               aes(yintercept = nest.depth)) +
+    ggtitle(paste0("Nest_UID = ", inundated.nests[[k]]$nest.ID, 
+                   ", Logger = ", inundated.nests[[k]]$logger.ID)) + 
+    theme(legend.position = "none")
+  
+    if (save.fig) ggsave(filename = paste0("figures/inundation_nest_", 
+                                           inundated.nests[[k]]$nest.ID, ".png"),
+                         device = "png", dpi = 600)
+}
+
+
+
+
+```
 
