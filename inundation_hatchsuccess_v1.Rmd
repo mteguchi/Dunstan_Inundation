@@ -15,6 +15,7 @@ library(readr)
 library(lubridate)
 
 source("Dunstan_Inundation_fcns.R")
+save.fig <- F
 ```
 
 Bring in all data files and take a look at them.
@@ -124,7 +125,8 @@ For each nest (row) in inund, data from one logger are assigned (ID_closest_logg
 
 ```{r}
 
-k <- 1
+k <-  c <- 1
+inundated.nests <- vector(mode = "list")
 for (k in 1:nrow(inund)){
   # in tibble, a variable needs to be pulled to get out of the tibble format
   # 'pull' does that trick.
@@ -132,8 +134,7 @@ for (k in 1:nrow(inund)){
   logger.id <- pull(inund.k, "ID_closest_logger")
   date.begin <- pull(inund.k, "Incubation_Start")
   date.end <- pull(inund.k, "Incubation_Finish")
-  
-  nest.depth <- inund[k, "Nest_Elevation"]
+  nest.depth <- pull(inund.k, "Nest_Elevation")   # this is key... 
   
   loggers %>% 
     filter(str_detect(Logger_ID, as.character(logger.id))) %>%
@@ -144,6 +145,8 @@ for (k in 1:nrow(inund)){
   
   if (nrow(inund.nest) > 0){
     print(paste0("inundation at nest ", k))
+    inundated.nests[[c]] <- list(logger.data = logger.k,
+                                 nest.depth = nest.depth)
     
     p.inund <- ggplot() +
       geom_path(data = logger.k,
@@ -152,10 +155,93 @@ for (k in 1:nrow(inund)){
                  aes(yintercept = Nest_Elevation)) +
       ggtitle(paste0("Nest_UID = ", inund.k$Nest_UID))
     
-    ggsave(filename = paste0("figures/inundation_nest_", inund.k$Nest_UID, ".png"),
-                             device = "png", dpi = 600)
+    if (save.fig) ggsave(filename = paste0("figures/inundation_nest_", inund.k$Nest_UID, ".png"),
+                         device = "png", dpi = 600)
+    
+    c <- c + 1
   }            
 }
 
 ```
+
+According to the plots, it was almost all-or-nothing. I asked Andy and Owen if I was using the right numbers, i.e., Height_LAT and Nest_Elevation. I have the feeling there has to be some sort of additions/subtractions need to happen? I'll wait for them to respond. It turned out, it was my error. I did not use "pull" to extract the nest elevation, which resulted in erroneous comparison with the Height_LAT. 
+
+Moving on with inundated nests... figuring out how many times each nest was inundated, how long each inundation event was, phase of incubation of each inundation event, maximum water height per inundation event, the duration of the highest inundation event.
+
+ADD NEST ID, INUNDATION EVENT ID IN OUTPUT. RECONSTRUCT THE LIST WITH NEW LOGGER.K AND LOGGER.K.INUND.
+2020-12-08
+```{r}
+# for each reading of logger, determine whether or not the nest height was greater (not inundated) than the water height (Height_LAT).
+k1 <- 1
+for (k1 in 1:length(inundated.nests)){
+  logger.k <- inundated.nests[[k1]]$logger.data
+  nest.depth <- inundated.nests[[k1]]$nest.depth
+  
+  logger.k %>% mutate(inund = ifelse(Height_LAT >= nest.depth, 1, 0)) -> logger.k
+
+  # if the nest was entirely underwater, no need to figure out how many times it was inundated
+  if (sum(logger.k$inund) == nrow(logger.k)){
+    inundated.nests[[k1]]$n.inund <- 1
+    inundated.nests[[k1]]$time.inund <- logger.k$Date_Time[nrow(logger.k)] -
+                                                        logger.k$Date_Time[1]
+    inundated.nests[[k1]]$max.height <- max(logger.k$Height_LAT)
+    inundated.nests[[k1]]$phase <- NA
+    inundated.nests[[k1]]$days.max.inund <- NA
+    
+  } else {  # if there were at least one un-inundated reading, we need to figure out inundation events
+    #duration.inund <- vector(mode = "numeric")
+    
+    # extract the inundation recordings
+    logger.k %>% filter(inund == 1) -> logger.k.inund 
+    
+    if (nrow(logger.k.inund) > 1){
+      # compute the time differences - look for those > 15 min
+      logger.k.inund$delta.time <- c(15, as.numeric(unlist(logger.k.inund[2:nrow(logger.k.inund), "Date_Time"] - logger.k.inund[1:(nrow(logger.k.inund) -1), "Date_Time"])))
+      
+      # identify inundation periods
+      tmp <- vector(mode = "numeric", length = nrow(logger.k.inund))
+      tmp[logger.k.inund$delta.time > 15] <- 1
+      tmp <- cumsum(tmp) + 1
+      logger.k.inund$inund.ID <- tmp
+      n.inund <- max(tmp)
+      inundated.nests[[k1]]$n.inund <- n.inund
+      
+      # compute the inundation statistics for each inundation event
+      time.inund <- vector(mode = "numeric", length = n.inund)
+      time.inund.unit <- vector(mode = "character", length = n.inund)
+      inundated.nests[[k1]]$max.height <- max(logger.k.inund$Height_LAT)
+      # Rather than "phase" I use # days from start date
+      inund.phase <- vector(mode = "numeric", length = n.inund)
+      inund.phase.unit <- vector(mode = "character", length = n.inund)
+      k3 <- 1
+      
+      for (k3 in 1:n.inund){
+        inund.tmp <- filter(logger.k.inund, inund.ID == k3)
+        time.inund[k3] <- inund.tmp$Date_Time[nrow(inund.tmp)] - inund.tmp$Date_Time[1]
+        time.inund.unit[k3] <- units(inund.tmp$Date_Time[nrow(inund.tmp)] - inund.tmp$Date_Time[1])
+        inund.phase[k3] <- inund.tmp$Date_Time[nrow(inund.tmp)] - logger.k$Date_Time[1]
+        inund.phase.unit[k3] <- units(inund.tmp$Date_Time[nrow(inund.tmp)] - logger.k$Date_Time[1])
+      }
+      
+      inundated.nests[[k1]]$time.inund <- time.inund
+      inundated.nests[[k1]]$time.inund.unit <- time.inund.unit
+      inundated.nests[[k1]]$inund.phase <- inund.phase
+      inundated.nests[[k1]]$inund.phase.unit <- inund.phase.unit
+      inundated.nests[[k1]]$days.max.inund <- NA
+      
+    } else {
+      inundated.nests[[k1]]$max.height <- logger.k.inund$Height_LAT
+      inundated.nests[[k1]]$n.inund <- 1
+      inundated.nests[[k1]]$time.inund <- 29
+      inundated.nests[[k1]]$time.inund.unit <- "minute"
+      inundated.nests[[k1]]$inund.phase <- logger.k.inund$Date_Time - logger.k$Date_Time[1]
+      inundated.nests[[k1]]$inund.phase.unit <- units(logger.k.inund$Date_Time - logger.k$Date_Time[1])
+      inundated.nests[[k1]]$days.max.inund <- NA
+      
+    }
+    
+  }  
+}
+```
+
 
