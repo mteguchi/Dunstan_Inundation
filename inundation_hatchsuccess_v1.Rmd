@@ -15,7 +15,7 @@ library(readr)
 library(lubridate)
 
 source("Dunstan_Inundation_fcns.R")
-save.fig <- F
+save.fig <- T
 ```
 
 Bring in all data files and take a look at them.
@@ -66,6 +66,12 @@ logger.cols <- cols(Logger_Depth = col_double(),
 inund <- read_csv("data/hatchsuccess_inund_2020-10-02_TE.csv", 
                   col_types = inund.cols)
 
+logger.3.1 <- read_csv("data/Logger3_1.csv",
+                       col_types = logger.cols) %>%
+  mutate(Logger_ID = "3.1",
+         Logger_Depth = min(Logger_Depth, na.rm = TRUE),
+         Date = as.Date(Date_Time, format = "%Y-%m-%d"))
+
 logger.3.2 <- read_csv("data/Logger3_2.csv",
                        col_types = logger.cols) %>%
   mutate(Logger_ID = "3.2",
@@ -106,7 +112,7 @@ logger.5.4 <- read_csv("data/Logger5_4.csv",
   mutate(Logger_ID = "5.4",
          Logger_Depth = min(Logger_Depth, na.rm = TRUE),
          Date = as.Date(Date_Time, format = "%Y-%m-%d"))
-loggers <- rbind(logger.3.2, logger.4.1, logger.4.2, logger.4.3,
+loggers <- rbind(logger.3.1, logger.3.2, logger.4.1, logger.4.2, logger.4.3,
                 logger.4.4, logger.5.1, logger.5.2, logger.5.4)
 ```
 
@@ -331,7 +337,7 @@ out.df <- data.frame(Nest_UID = unlist(lapply(inundated.nests,
 
 inund %>% left_join(out.df, by = "Nest_UID") -> inund.2
 
-write_csv(inund.2, file = "data/inund_results.csv")
+#write_csv(inund.2, file = "data/inund_results.csv")
 
 ```
 
