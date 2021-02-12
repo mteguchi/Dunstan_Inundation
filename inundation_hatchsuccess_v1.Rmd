@@ -15,11 +15,16 @@ library(readr)
 library(lubridate)
 
 source("Dunstan_Inundation_fcns.R")
-save.fig <- T
-save.output <- T
+save.fig <- F
+save.output <- F
+
 ```
 
 Bring in all data files and take a look at them.
+
+email from Owen Coffee on 2021-02-04: "An update on the 1802_ nests, Marshall has identified by comparing the nest elevations to the most recent surface elevation topographic survey 11 nests that he is fairly confident were marked against Mean Sea Level and not Lowest Astronomical Tide. However, we are not yet able to confirm this. I think then that our best course of action is to either remove these 11 nests from the analysis or remove the entire 1802_ series from the analysis until we can confirm which nests are in error. I have attached the subsetted data file Marshall shared that identifies the 11 nests that he identified as the issue. Happy with which ever option you think is more prudent until we can resolve the errors in that nest series."
+
+Marshall identified the following as those with possible error: 1802-32, -19, -14, -4, -23, -2, -5, -7, -13, -3, -16, and -15.  
 
 ```{r}
 # The last five fields (Number_inundation_events to Duration_max_inundation) are empty.
@@ -64,8 +69,15 @@ logger.cols <- cols(Logger_Depth = col_double(),
                     Date_Time = col_datetime(format = "%d/%m/%Y %H:%M"),
                     Height_LAT = col_double())
 
-inund <- read_csv("data/hatchsuccess_inund_2020-10-02_TE.csv", 
+inund.0 <- read_csv("data/hatchsuccess_inund_2020-10-02_TE.csv", 
                   col_types = inund.cols)
+
+nests.to.remove <- c("1802-32", "1802-19", "1802-14", 
+                     "1802-4", "1802-23", "1802-2", 
+                     "1802-5", "1802-7", "1802-13", 
+                     "1802-3", "1802-16", "1802-15")
+
+inund.0 %>% filter(!( Nest_UID %in% nests.to.remove)) -> inund
 
 loggers.data.files <- list.files(path = "data/", pattern = "Logger")
 
