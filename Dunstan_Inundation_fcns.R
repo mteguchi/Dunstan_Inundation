@@ -1,4 +1,84 @@
 
+# computes LOOIC
+compute.LOOIC <- function(loglik, data.vector, MCMC.params){
+  n.per.chain <- (MCMC.params$n.samples - MCMC.params$n.burnin)/MCMC.params$n.thin
+  
+  loglik.vec <- as.vector(loglik)
+  
+  # each column corresponds to a data point and rows are MCMC samples
+  loglik.mat <- matrix(loglik.vec, nrow = n.per.chain * MCMC.params$n.chains)
+  
+  # take out the columns that correspond to missing data points
+  loglik.mat <- loglik.mat[, !is.na(data.vector)]
+  # loglik.mat <- matrix(loglik.vec[!is.na(data.vector)], 
+  #                      nrow = MCMC.params$n.chains * n.per.chain)
+  
+  Reff <- relative_eff(exp(loglik.mat),
+                       chain_id = rep(1:MCMC.params$n.chains,
+                                      each = n.per.chain),
+                       cores = 4)
+  
+  #
+  loo.out <- loo(loglik.mat, 
+                 r_eff = Reff, 
+                 cores = 4, k_threshold = 0.7)
+  
+  out.list <- list(Reff = Reff,
+                   loo.out = loo.out)
+  
+  return(out.list)  
+}
+
+
+# Extracting posterior samples from jags output:
+extract.samples <- function(varname, zm){
+  dev <- do.call(rbind, zm[, varname])
+  return(dev)
+}
+
+# calculating Bayesian R2 values with logit - Gelman et al. 2018
+bayes.logit.R2 <- function(X, betas, samples, sigma.name){
+  # predicted y (y^pred in Gelman et al. 2018), just Xb
+  # but we are using logit(y) so need to do inverse logit
+  y.pred <- rstanarm::invlogit(X %*% t(betas))   # y-tilde
+  
+  # R2 = var.fit/(var.fit + var.res)  -- Gelman et al. 2018
+  # var.fit = the variance of the modeled predictive means = the variance among the expectations of the new data
+  var.fit <- apply(y.pred, MARGIN = 2, FUN = var)  
+  #var.fit <- var(means.y)
+  
+  # var.res is the modeled residual variance 
+  sigma.res <- unlist(samples[,sigma.name])
+  var.res <- sigma.res^2
+  #var(apply(pred.y - means.y, MARGIN = 1, FUN = mean))
+  
+  R2 <- var.fit/(var.fit + var.res)
+  return(R2)  
+}
+
+# calculating Bayesian R2 values - Gelman et al. 2018
+bayes.R2 <- function(X, betas, samples, sigma.name){
+  # predicted y (y^pred in Gelman et al. 2018), just Xb
+  # but we are using logit(y) so need to do inverse logit
+  y.pred <- X %*% t(betas)   # y-tilde
+  
+  # R2 = var.fit/(var.fit + var.res)  -- Gelman et al. 2018
+  # var.fit = the variance of the modeled predictive means = the variance among the expectations of the new data
+  var.fit <- apply(y.pred, MARGIN = 2, FUN = var)  
+  #var.fit <- var(means.y)
+  
+  # var.res is the modeled residual variance (this is approximate - modeled variance)
+  sigma.res <- unlist(samples[,sigma.name])
+  var.res <- sigma.res^2
+  #var(apply(pred.y - means.y, MARGIN = 1, FUN = mean))
+  
+  R2 <- var.fit/(var.fit + var.res)
+  return(R2)  
+  
+}
+
+
+
 std_dist_berm <- function(x){
   out <- (x - min(x))/sqrt(var(x))
   return(out)

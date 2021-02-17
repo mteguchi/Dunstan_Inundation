@@ -16,7 +16,7 @@ library(lubridate)
 
 source("Dunstan_Inundation_fcns.R")
 save.fig <- F
-save.output <- F
+save.output <- T
 
 ```
 
@@ -315,7 +315,19 @@ for (k1 in 1:length(inundated.nests)){
                                 inund.time.day = inund.time.day,
                                 inund.time.phase = inund.time.phase, 
                                 #inund.time.unit = inund.time.unit,
-                                duration.max.height.event = duration.max.height.event)
+                                duration.max.height.event = duration.max.height.event,
+                                total.inund.duration.hr = sum(inund.duration.hr),
+                                mean.inund.duration.hr = mean(inund.duration.hr),
+                                prop.inund.duration = (sum(inund.duration.hr)/24)/as.numeric(incubation.duration),
+                                sd.inund.duration.hr = sqrt(var(inund.duration.hr)),
+                                mean.max.height.per.event = mean(max.height.per.event),
+                                sd.max.height.per.event = sqrt(var(max.height.per.event)),
+                                n.inund.phase1 = sum(inund.time.phase <= 18/51),
+                                n.inund.phase2 = sum(inund.time.phase > 18/51 & inund.time.phase <= 37/51),
+                                n.inund.phase3 = sum(inund.time.phase > 37/51),
+                                hr.inund.phase1 = sum(inund.duration.hr[inund.time.phase <= 18/51]),
+                                hr.inund.phase2 = sum(inund.duration.hr[inund.time.phase > 18/51 & inund.time.phase <= 37/51]),
+                                hr.inund.phase3 = sum(inund.duration.hr[inund.time.phase > 37/51]))
 }
 ```
 
@@ -358,28 +370,49 @@ Write out to a file - not all information can be written into a flat file as the
 
 out.df <- data.frame(Nest_UID = unlist(lapply(inundated.nests, 
                                               function(x) x$nest.ID)),
-                     # Nest_Elevation = unlist(lapply(inundated.nests, 
-                     #                                function(x) x$nest.depth)),
-                     # ID_closest_logger = unlist(lapply(inundated.nests, 
-                     #                                   function(x) x$logger.ID)) ,
-                     #Incubation_Start = unlist(lapply(inundated.nests, 
-                    #                                  function(x) x$date.begin)),
-                     #Incubation_Finish = unlist(lapply(inundated.nests, 
-                    #                                   function(x) x$date.end)),
-                     # Incubation_Duration = unlist(lapply(inundated.nests, 
-                     #                                     function(x) x$incubation.duration)),
                      Max_Height = unlist(lapply(inundated.nests, 
                                                 function(x) x$max.height)),
                      n_Inundation = unlist(lapply(inundated.nests, 
                                                   function(x) x$n.inund)),
                      Max_Inund_Duration_Hr = unlist(lapply(inundated.nests, 
-                                                           function(x) x$duration.max.height.event)))
+                                                           function(x) x$duration.max.height.event)),
+                     Total_Inund_Duration_Hr = unlist(lapply(inundated.nests, 
+                                                             function(x) x$total.inund.duration.hr)),
+                     Mean_Inund_Duration_Hr = unlist(lapply(inundated.nests, 
+                                                            function(x) x$mean.inund.duration.hr)),
+                     Prop_Inund_Duration = unlist(lapply(inundated.nests, 
+                                                         function(x) x$prop.inund.duration)),
+                     SD_Inund_Duration_Hr = unlist(lapply(inundated.nests, 
+                                                         function(x) x$sd.inund.duration.hr)),
+                     Mean_Max_Height_Per_Event = unlist(lapply(inundated.nests, 
+                                                         function(x) x$mean.max.height.per.event)),
+                     SD_Max_Height_Per_Event = unlist(lapply(inundated.nests, 
+                                                         function(x) x$sd.max.height.per.event)),
+                     n_Inund_Phase_A = unlist(lapply(inundated.nests, 
+                                                         function(x) x$n.inund.phase1)),
+                     n_Inund_Phase_B = unlist(lapply(inundated.nests, 
+                                                         function(x) x$n.inund.phase2)),
+                     n_Inund_Phase_C = unlist(lapply(inundated.nests, 
+                                                         function(x) x$n.inund.phase3)),
+                     Hr_Inund_Phase_A = unlist(lapply(inundated.nests, 
+                                                         function(x) x$hr.inund.phase1)),
+                     Hr_Inund_Phase_B = unlist(lapply(inundated.nests, 
+                                                         function(x) x$hr.inund.phase2)),
+                     Hr_Inund_Phase_C = unlist(lapply(inundated.nests, 
+                                                         function(x) x$hr.inund.phase3)))
 
-inund %>% left_join(out.df, by = "Nest_UID") -> inund.2
+# remove empty columns
+inund %>% left_join(out.df, by = "Nest_UID") %>%
+  select(-c("Number_inundation_events", 
+            "Inundation_period_per_event",
+            "Phase_incubation_per_inundation", 
+            "Max_inundation_height_event", 
+            "Duration_max_inundation")) -> inund.2
+
+inund.2$n_Inundation[is.na(inund.2$n_Inundation)] <- 0
 
 if (save.output)
   write_csv(inund.2, file = "data/inund_results.csv")
 
 ```
-
 

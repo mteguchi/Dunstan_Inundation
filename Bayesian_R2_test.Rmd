@@ -1,0 +1,63 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Testing Bayesian R2 computation
+
+```{r}
+rm(list=ls())
+library(jagsUI)
+source("Dunstan_Inundation_fcns.R")
+```
+
+
+Test the function using an example dataset
+```{r}
+#' ## Toy data with n=5
+x <- 1:5 - 3
+y <- c(1.7, 2.6, 2.5, 4.4, 3.8) - 3
+xy <- data.frame(x,y)
+
+#' **Lsq fit**
+fit <- lm(y ~ x, data = xy)
+ols_coef <- coef(fit)
+yhat <- ols_coef[1] + ols_coef[2] * x
+r <- y - yhat
+rsq_1 <- var(yhat)/(var(y))
+rsq_2 <- var(yhat)/(var(yhat) + var(r))
+round(c(rsq_1, rsq_2), 3)
+
+```
+
+```{r}
+sink("models/linreg.txt")
+cat("model{
+  for (i in 1:N){
+  mu.y[i] <- b0 + b1 * x[i]
+  y[i] ~ dnorm(mu.y[i], tau.y)
+  
+  }
+  sigma.y <- sqrt(1/tau.y)
+  tau.y ~ dgamma(0.1,0.01)
+  b0 ~ dnorm(0, 0.2)
+  b1 ~ dnorm(1, 0.2)
+}", fill = TRUE)
+sink()
+
+j.data <- list(x = x, y = y, N = 5)
+jm <- jags(data = j.data,
+           parameters.to.save= c("b0", "b1", "sigma.y"),
+           model.file = "models/linreg.txt",
+             n.chains = 3,
+             n.burnin = 50,
+             n.thin = 5,
+             n.iter = 500)
+
+
+X <- cbind(1, x)
+betas <- extract.samples(c("b0", "b1"), jm$samples)
+
+R2 <- bayes.R2(X, betas, samples = jm$samples, "sigma.y")
+round(median(R2),2)
+```
