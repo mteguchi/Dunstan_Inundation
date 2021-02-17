@@ -424,7 +424,7 @@ b[1] (Max_Height) > 0; A positive relationship between Max_Height and p_success
 b[2] (Mean_Max_Height_Per_Event) < 0; A negative relationship between Mean_Max_Height_Per_Event and p_success
 b[3] (Hr_Inund_Phase_B) < 0; A negative relationship between Hr_Inund_Phase_B and p_success
 
-Smaller maximum tide height, greater mean maximum tide height per event, and longer inundation during Phase B (18-36 days) result in low hatching success rate. 
+Smaller maximum tide height of inundation events, greater mean maximum tide height per event, and longer inundation during Phase B (18-36 days) result in low hatching success rate. 
 
 Does this make sense...?
 
