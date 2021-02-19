@@ -8,7 +8,35 @@ Testing Bayesian R2 computation
 ```{r}
 rm(list=ls())
 library(jagsUI)
-source("Dunstan_Inundation_fcns.R")
+
+
+# Extracting posterior samples from jags output:
+extract.samples <- function(varname, zm){
+  dev <- do.call(rbind, zm[, varname])
+  return(dev)
+}
+
+# calculating Bayesian R2 values - Gelman et al. 2018
+bayes.R2 <- function(X, betas, samples, sigma.name){
+  # predicted y (y^pred in Gelman et al. 2018), just Xb
+  # but we are using logit(y) so need to do inverse logit
+  y.pred <- X %*% t(betas)   # y-tilde
+  
+  # R2 = var.fit/(var.fit + var.res)  -- Gelman et al. 2018
+  # var.fit = the variance of the modeled predictive means = the variance among the expectations of the new data
+  var.fit <- apply(y.pred, MARGIN = 2, FUN = var)  
+  #var.fit <- var(means.y)
+  
+  # var.res is the modeled residual variance (this is approximate - modeled variance)
+  sigma.res <- unlist(samples[,sigma.name])
+  var.res <- sigma.res^2
+  #var(apply(pred.y - means.y, MARGIN = 1, FUN = mean))
+  
+  R2 <- var.fit/(var.fit + var.res)
+  return(R2)  
+  
+}
+
 ```
 
 

@@ -1,0 +1,191 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Examining relationships between inundation height and various environmental variables. 
+
+```{r}
+rm(list = ls())
+
+library("tidyverse")
+library("lubridate")
+
+```
+
+Bring in the data files
+
+```{r}
+inund_cols <- cols(Transect = col_integer(),
+                   Post = col_integer(),
+                   InundHeight_AbvLAT = col_double(),
+                   Dist_Berm = col_double(),
+                   Berm_elevation = col_double(),
+                   BermSurvey_Month = col_character(),
+                   Inund_Month = col_character(),
+                   Date = col_date(format = "%d/%m/%Y"),
+                   Time = col_time(format = ""))
+
+inund <- read_csv("data/inundationRaine.csv", col_types = inund_cols) 
+
+Nest_cols <- cols(Nest_ID = col_integer(),
+                  Nest_Easting = col_double(),
+                  Nest_Northing = col_double(),
+                  Nest_Elevation = col_double(),
+                  BermDist_m = col_double(),
+                  inundated = col_character())
+
+Nest_18INUND <- read_csv("data/2018Nest_INUND.csv",
+                         col_types = Nest_cols)  
+
+Agg_cols <- cols(Date = col_date(format = "%d/%m/%Y"),
+                 T2_4 = col_double(),
+                 T3_1 = col_double(),
+                 T3_2 = col_double(),
+                 T4_1 = col_double(),
+                 T4_2 = col_double(),
+                 T4_3 = col_double(),
+                 T4_4 = col_double(),
+                 T5_1 = col_double(),
+                 T5_2 = col_double(),
+                 T5_4 = col_double(),
+                 'Barometric Pressure (Hpa)' = col_double(),
+                 'Rainfall (mm)' = col_double(),
+                 'Tide Height' = col_double(),
+                 MAX_Wind = col_double(),
+                 MAX_AVGWind = col_double())
+
+Agg_INUND <- read_csv("data/Inund_concat.csv",
+                      col_types = Agg_cols) %>%
+  rename(T_Height = 'Tide Height',
+         Rainfall = 'Rainfall (mm)',
+         Baro_Press = 'Barometric Pressure (Hpa)')
+
+# Regular expression "." is a wildcard, so T._. includes all column names with T in the first position and _ in the third position, whereas 2nd and 4th position can be anything. 
+Agg_INUND %>% select(Date, matches("T._.")) -> Agg_INUND_loggers
+
+Agg_INUND_loggers %>% 
+  pivot_longer(!Date, names_to = "logger", values_to = "height") -> Agg_INUND_loggers_long
+
+# get just environmental variables
+Agg_INUND %>% select(Date, !matches("T._.")) -> Agg_INUND_enviro
+
+Agg_INUND %>% select(Date, c(T_Height, matches("T._."))) -> Agg_INUND_T_Height
+Agg_INUND_T_Height %>% 
+  pivot_longer(!c(Date, T_Height), names_to = "logger", values_to = "height") -> Agg_INUND_T_Height_long
+
+Agg_INUND %>% select(Date, c(Rainfall, matches("T._."))) -> Agg_INUND_Rainfall
+Agg_INUND_Rainfall %>%
+  pivot_longer(!c(Date, Rainfall), names_to = "logger", values_to = "height") -> Agg_INUND_Rainfall_long
+
+Agg_INUND %>% select(Date, c(Baro_Press, matches("T._."))) -> Agg_INUND_Baro
+Agg_INUND_Baro %>%
+  pivot_longer(!c(Date, Baro_Press), names_to = "logger", values_to = "height") -> Agg_INUND_Baro_long
+
+Agg_INUND %>% select(Date, c(MAX_Wind, matches("T._."))) -> Agg_INUND_MAX_Wind
+Agg_INUND_MAX_Wind %>%
+  pivot_longer(!c(Date, MAX_Wind), names_to = "logger", values_to = "height") -> Agg_INUND_MAX_Wind_long
+
+Agg_INUND %>% select(Date, c(MAX_AVGWind, matches("T._."))) -> Agg_INUND_MAX_AVGWind
+Agg_INUND_MAX_AVGWind %>%
+  pivot_longer(!c(Date, MAX_AVGWind), names_to = "logger", values_to = "height") -> Agg_INUND_MAX_AVGWind_long
+
+# 
+# #Wells_5Apr16 <- read_csv("CSVs/DirectWells_5April2016.csv")
+# Wells_5Apr16 <- read_csv("data/DirectWells_5April2016.csv")  # TE
+#  Wells_5Apr16 <- Wells_5Apr16[c(-9)]
+#   Wells_5Apr16 <- na.omit(Wells_5Apr16) 
+#    
+# # Wells_6Apr16 <- read_csv("CSVs/DirectWells_6April2016.csv")
+# #  
+# # Tides_Apr16 <- read_csv("CSVs/PredictedTides_April2016.csv")
+# #  
+# # inund_Apr16 <- read_csv("CSVs/InundLoggers_April2016.csv")
+#  
+# Wells_6Apr16 <- read_csv("data/DirectWells_6April2016.csv")  # TE
+#  
+# Tides_Apr16 <- read_csv("data/PredictedTides_April2016.csv")  # TE
+#  
+# inund_Apr16 <- read_csv("data/InundLoggers_April2016.csv")  # TE
+ 
+ 
+```
+
+
+Density plot of height
+```{r}
+
+ggplot(Agg_INUND_loggers_long) +
+  geom_density(aes(x = height)) + 
+  facet_wrap(~ as.factor(logger))
+
+```
+
+Some are more "normal" than others... 
+
+
+Scatter plots between loggers and environmental variables 
+
+```{r}
+ggplot(Agg_INUND_T_Height_long) +
+  geom_point(aes(x = T_Height, y = height)) + 
+  facet_wrap(~ as.factor(logger))
+
+
+```
+
+Some are "more" linear than others. 
+
+
+
+```{r}
+ggplot(Agg_INUND_Rainfall_long) +
+  geom_point(aes(x = Rainfall, y = height)) + 
+  facet_wrap(~ as.factor(logger))
+
+
+```
+
+There aren't much of relationships in these plots. 
+
+```{r}
+ggplot(Agg_INUND_Baro_long) +
+  geom_point(aes(x = Baro_Press, y = height)) + 
+  facet_wrap(~ as.factor(logger))
+
+
+```
+
+Not much relationships here either. 
+
+
+
+```{r}
+ggplot(Agg_INUND_MAX_Wind_long) +
+  geom_point(aes(x = MAX_Wind, y = height)) + 
+  facet_wrap(~ as.factor(logger))
+
+
+```
+
+No relationship... 
+
+
+```{r}
+ggplot(Agg_INUND_MAX_AVGWind_long) +
+  geom_point(aes(x = MAX_AVGWind, y = height)) + 
+  facet_wrap(~ as.factor(logger))
+
+
+```
+
+Not here either... 
+
+Time series plots:
+
+```{r}
+ggplot(data = Agg_INUND_loggers_long) + 
+  geom_path(aes(x = Date, y = height, color = as.factor(logger)))
+```
+
+
