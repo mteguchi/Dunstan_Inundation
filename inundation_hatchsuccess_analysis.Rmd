@@ -58,6 +58,8 @@ inund.cols <- cols(fid = col_integer(),
                    Total_unhatched = col_integer(),
                    Total_clutch = col_integer(),
                    prop_success = col_double(),
+                   sector = col_character(),
+                   season = col_character(),
                    Max_Height = col_double(),
                    n_Inundation = col_integer(),
                    Max_Inund_Duration_Hr = col_double(),
@@ -89,17 +91,27 @@ inund.2 %>% filter(n_Inundation > 0) -> only.inund
 
 ggplot(data = zero.inund) + 
   geom_histogram(aes(x = prop_success),
-                 bins = 20) +
+                 bins = 10) +
+    facet_grid(rows = vars(Season), cols = vars(Sector)) +
   labs(title = "No inundation", x = "Proportion of success")
+
+# ggsave(filename = "figures/P_success_No_inundation.png",
+#        device = "png", dpi = 600)
 ```
 
 ```{r}
 ggplot(data = only.inund) + 
   geom_histogram(aes(x = prop_success),
-                 bins = 20) +
+                 bins = 10) +
+  facet_grid(rows = vars(Season), cols = vars(Sector)) +
   labs(title = "Inundation", x = "Proportion of success")
 
+# ggsave(filename = "figures/P_success_inundation.png",
+#        device = "png", dpi = 600)
+
 ```
+
+Not all sectors were monitored over the two seasons...  
 
 
 Seems like disproportionate number of nests had zero hatching success when inundated. 
@@ -108,7 +120,7 @@ Look at correlation among some variables in inundated data
 
 ```{r}
 
-only.inund %>% select(Nest_Elevation, Berm_Dist, Season,
+only.inund %>% select(Nest_Elevation, Berm_Dist, Season, Sector, Northings, Eastings,
                       Hatched, Live_hatchlings, Total_clutch, prop_success,
                       Max_Height, n_Inundation, Max_Inund_Duration_Hr,
                       Total_Inund_Duration_Hr, Mean_Inund_Duration_Hr, 
@@ -117,18 +129,20 @@ only.inund %>% select(Nest_Elevation, Berm_Dist, Season,
                       n_Inund_Phase_C, Hr_Inund_Phase_A, Hr_Inund_Phase_B, Hr_Inund_Phase_C) %>%
   mutate(p_success = (Hatched + Live_hatchlings)/Total_clutch,
          f_Season = as.factor(Season),
+         f_Sector = as.factor(Sector),
          Hr_Inund_Phase_AB = Hr_Inund_Phase_A + Hr_Inund_Phase_B,
          Hr_Inund_Phase_AC = Hr_Inund_Phase_A + Hr_Inund_Phase_C,
          Hr_Inund_Phase_BC = Hr_Inund_Phase_B + Hr_Inund_Phase_C) %>% 
   
   na.omit() -> only.inund.2
 
-only.inund.2 %>% select(p_success, Max_Height, n_Inundation, Max_Inund_Duration_Hr,
-                      Total_Inund_Duration_Hr, Mean_Inund_Duration_Hr,
-                      Prop_Inund_Duration, SD_Inund_Duration_Hr, Mean_Max_Height_Per_Event,
-                      SD_Max_Height_Per_Event, n_Inund_Phase_A, n_Inund_Phase_B,
-                      n_Inund_Phase_C, Hr_Inund_Phase_A, Hr_Inund_Phase_B, Hr_Inund_Phase_C,
-                      Hr_Inund_Phase_AB, Hr_Inund_Phase_AC, Hr_Inund_Phase_BC) %>%
+only.inund.2 %>% select(p_success, Max_Height, 
+                        n_Inundation, Max_Inund_Duration_Hr,
+                        Total_Inund_Duration_Hr, Mean_Inund_Duration_Hr,
+                        Prop_Inund_Duration, SD_Inund_Duration_Hr, Mean_Max_Height_Per_Event,
+                        SD_Max_Height_Per_Event, n_Inund_Phase_A, n_Inund_Phase_B,
+                        n_Inund_Phase_C, Hr_Inund_Phase_A, Hr_Inund_Phase_B, Hr_Inund_Phase_C,
+                        Hr_Inund_Phase_AB, Hr_Inund_Phase_AC, Hr_Inund_Phase_BC) %>%
   na.omit() -> only.inund.3
 
 cormat <- cor(only.inund.3)
@@ -150,16 +164,19 @@ Throw in all variables
 ```{r, echo=FALSE, results='hide'}
 response <- only.inund.2$p_success
 
-predictors <- only.inund.2 %>% select(-c(p_success, f_Season, Season))
+predictors <- only.inund.2 %>% select(-c(p_success, f_Season, Season, f_Sector, Sector))
 RF.data <- as.data.frame(scale(predictors))
 
-RF.data$p_success <- response
+# Transform the proportion using asin (sqrt (p))
+RF.data$p_success <- asin(sqrt(response))
 RF.data$RV <- runif(nrow(RF.data), 0, 1)
 
 ntree <- 500
 
 M.3 <- as.formula("p_success ~ Nest_Elevation + 
                   Berm_Dist + 
+                  Northings + 
+                  Eastings +
                   Max_Height + 
                   n_Inundation + 
                   Max_Inund_Duration_Hr +
@@ -214,9 +231,10 @@ ggplot(data = var.imp.df) +
 They seem to affect hatching success somewhat. Interesting to find that Phase B (18-36 days of incubation) affects more than other phases. 
 
 ```{r}
+# back transform asin(sqrt(x))  
 RF.data$p.success.prediction <- pred.RF.M.3
 ggplot(data = RF.data) +
-  geom_point(aes(x = p_success, y = p.success.prediction)) + 
+  geom_point(aes(x = (sin(p_success))^2, y = (sin(p.success.prediction))^2)) + 
   geom_abline(slope = 1.0, intercept = 0.0) + 
   ylim(c(0, 1)) + 
   labs(x = "Observed success rate", 
@@ -225,6 +243,80 @@ ggplot(data = RF.data) +
 ```
 
 Can't predict well... This is disappointing... 
+
+How about zero_inund data:
+
+Throw in all variables
+
+```{r, echo=FALSE, results='hide'}
+zero.inund %>% select(Nest_Elevation, Berm_Dist, Season, Sector, Northings, Eastings,
+                      Hatched, Live_hatchlings, Total_clutch, prop_success) %>%
+  mutate(p_success = (Hatched + Live_hatchlings)/Total_clutch,
+         f_Season = as.factor(Season),
+         f_Sector = as.factor(Sector)) %>% 
+  
+  na.omit() -> zero.inund.2
+# p_success > 1 in one case... 
+#response <- zero.inund.2$p_success
+response <- zero.inund.2$prop_success/100
+
+predictors <- zero.inund.2 %>% select(-c(p_success, f_Season, Season, f_Sector, Sector))
+RF.data.zero.inund <- as.data.frame(scale(predictors))
+
+RF.data.zero.inund$p_success <- asin(sqrt(response))
+RF.data.zero.inund$RV <- runif(nrow(RF.data.zero.inund), 0, 1)
+
+# ntree <- 500
+# 
+M.4 <- as.formula("p_success ~ Nest_Elevation +
+                  Berm_Dist + Northings + Eastings +
+                  RV")
+
+RF.M.4.zero.inund <- cforest(formula = M.4,
+                             data = RF.data.zero.inund,
+                             control = cforest_unbiased(ntree = ntree,
+                                             trace = 500))
+if (save.file)
+  saveRDS(RF.M.4, file = "RData/RF_M_4_zero_inund.out.rds")
+
+var.imp.zero.inund <- sort(varimp(RF.M.4.zero.inund), decreasing = FALSE)
+
+if (save.file)
+  saveRDS(var.imp.zero.inund, file = "RData/RF_M_4_zero_inund_varImp.rds")
+
+pred.RF.M.4.zero.inund <- RF.M.4.zero.inund@predict_response()
+
+```
+
+
+Look at the variable importance:
+```{r}
+var.imp.zero.inund.df <- data.frame(var.imp.zero.inund)
+var.imp.zero.inund.df$Variable <- rownames(var.imp.zero.inund.df)
+
+ggplot(data = var.imp.zero.inund.df) + 
+  geom_point(aes(x = var.imp.zero.inund, y = reorder(Variable, var.imp.zero.inund)),
+             size = 3) + 
+  theme_bw() + 
+  labs(x = "Variable importance") + 
+  theme(axis.title.y = element_blank(),
+        axis.title.x = element_text(size =12))
+```
+
+
+
+```{r}
+RF.data.zero.inund$p.success.prediction <- pred.RF.M.4.zero.inund
+ggplot(data = RF.data.zero.inund) +
+  geom_point(aes(x = (sin(p_success))^2, y = (sin(p.success.prediction))^2)) + 
+  geom_abline(slope = 1.0, intercept = 0.0) + 
+  ylim(c(0, 1)) + 
+  labs(x = "Observed success rate", 
+       y = "Predicted success rate")
+
+```
+
+
 
 Try beta regression (betareg)
 
@@ -238,6 +330,7 @@ betareg.data$p.success.2 <- RF.data$p_success
 betareg.data$p.success.2[betareg.data$p_success > 0.999] <- 0.999
 betareg.data$p.success.2[betareg.data$p_success < 0.001] <- 0.001
 betareg.data$f_Season <- only.inund.2$f_Season
+#betareg.data$f_Sector <- only.inund.2$f_Sector
 
 # Use the variables that were considered important in RF
 fit.betareg.1 <- betareg(p.success.2 ~ Berm_Dist + Max_Height + Mean_Max_Height_Per_Event + Hr_Inund_Phase_B +  Nest_Elevation + f_Season,
@@ -261,7 +354,7 @@ Let's try doing this in the Bayesian regression.
 ```{r}
 response <- only.inund.2$p_success
 # get rid of non-numeric variables
-predictors <- only.inund.2 %>% select(-c(p_success, f_Season, Season))
+predictors <- only.inund.2 %>% select(-c(p_success, f_Season, Season, f_Sector, Sector))
 Bayes.data <- as.data.frame(scale(predictors))
 #Bayes.data$Season <- ifelse(only.inund.2$f_Season == "17/18", 0, 1)
 
