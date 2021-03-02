@@ -1,10 +1,10 @@
 # JAGS model to fit a logit model to hatching success
-
+# transform y using asine(sqrt(y)) before running this code.
 
 model{
 	for (i in 1:N){
 
-		logit(mu.y[i]) <- X[i,] %*% b #b0 + b[1] * X1[i] + b[2] * X2[i] + b[3] * X3[i]
+		mu.y[i] <- X[i,] %*% b 
 		y[i] ~ dnorm(mu.y[i], tau.y)
 		
 		loglik[i] <- logdensity.norm(y[i], mu.y[i], tau.y)

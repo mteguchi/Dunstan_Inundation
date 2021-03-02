@@ -74,11 +74,18 @@ inund.cols <- cols(fid = col_integer(),
                    n_Inund_Phase_C = col_integer(),
                    Hr_Inund_Phase_A = col_double(),
                    Hr_Inund_Phase_B = col_double(),
-                   Hr_Inund_Phase_C = col_double())
+                   Hr_Inund_Phase_C = col_double(),
+                   inund_hrs_lt_25 = col_double(),
+                   inund_hrs_gt_25_lt_50 = col_double(), 
+                   inund_hrs_gt_50_lt_75 = col_double(),
+                   inund_hrs_gt_75 = col_double())
 
-inund.2 <- read_csv(file = "data/inund_results.csv",
+inund.1 <- read_csv(file = "data/inund_results.csv",
                     col_types = inund.cols)
 
+# remove four nests whose bottom height was above the nearest logger the entire duration.
+
+inund.1 %>% filter(!Nest_UID %in% c("1812-081", "1812-003", "1802-18", "1712-076")) -> inund.2
 ```
 
 
@@ -126,7 +133,9 @@ only.inund %>% select(Nest_Elevation, Berm_Dist, Season, Sector, Northings, East
                       Total_Inund_Duration_Hr, Mean_Inund_Duration_Hr, 
                       Prop_Inund_Duration, SD_Inund_Duration_Hr, Mean_Max_Height_Per_Event,
                       SD_Max_Height_Per_Event, n_Inund_Phase_A, n_Inund_Phase_B,
-                      n_Inund_Phase_C, Hr_Inund_Phase_A, Hr_Inund_Phase_B, Hr_Inund_Phase_C) %>%
+                      n_Inund_Phase_C, Hr_Inund_Phase_A, Hr_Inund_Phase_B, Hr_Inund_Phase_C,
+                      inund_hrs_lt_25, inund_hrs_gt_25_lt_50, inund_hrs_gt_50_lt_75,
+                      inund_hrs_gt_75) %>%
   mutate(p_success = (Hatched + Live_hatchlings)/Total_clutch,
          f_Season = as.factor(Season),
          f_Sector = as.factor(Sector),
@@ -142,7 +151,9 @@ only.inund.2 %>% select(p_success, Max_Height,
                         Prop_Inund_Duration, SD_Inund_Duration_Hr, Mean_Max_Height_Per_Event,
                         SD_Max_Height_Per_Event, n_Inund_Phase_A, n_Inund_Phase_B,
                         n_Inund_Phase_C, Hr_Inund_Phase_A, Hr_Inund_Phase_B, Hr_Inund_Phase_C,
-                        Hr_Inund_Phase_AB, Hr_Inund_Phase_AC, Hr_Inund_Phase_BC) %>%
+                        Hr_Inund_Phase_AB, Hr_Inund_Phase_AC, Hr_Inund_Phase_BC,
+                        inund_hrs_lt_25, inund_hrs_gt_25_lt_50, inund_hrs_gt_50_lt_75,
+                        inund_hrs_gt_75) %>%
   na.omit() -> only.inund.3
 
 cormat <- cor(only.inund.3)
@@ -162,9 +173,10 @@ Can we predict hatching success using these predictors? Random Forest
 Throw in all variables
 
 ```{r, echo=FALSE, results='hide'}
-response <- only.inund.2$p_success
+response <- only.inund.2$prop_success/100
 
-predictors <- only.inund.2 %>% select(-c(p_success, f_Season, Season, f_Sector, Sector))
+predictors <- only.inund.2 %>% select(-c(p_success, prop_success, f_Season, Season, f_Sector, Sector))
+#RF.data <- as.data.frame(predictors)
 RF.data <- as.data.frame(scale(predictors))
 
 # Transform the proportion using asin (sqrt (p))
@@ -195,6 +207,10 @@ M.3 <- as.formula("p_success ~ Nest_Elevation +
                   Hr_Inund_Phase_AB +
                   Hr_Inund_Phase_AC +
                   Hr_Inund_Phase_BC +
+                  inund_hrs_lt_25 + 
+                  inund_hrs_gt_25_lt_50 + 
+                  inund_hrs_gt_50_lt_75 +
+                  inund_hrs_gt_75 +
                   RV")
 
 RF.M.3 <- cforest(formula = M.3,
@@ -251,14 +267,14 @@ Throw in all variables
 ```{r, echo=FALSE, results='hide'}
 zero.inund %>% select(Nest_Elevation, Berm_Dist, Season, Sector, Northings, Eastings,
                       Hatched, Live_hatchlings, Total_clutch, prop_success) %>%
-  mutate(p_success = (Hatched + Live_hatchlings)/Total_clutch,
+  mutate(p_success = prop_success/100,
          f_Season = as.factor(Season),
          f_Sector = as.factor(Sector)) %>% 
   
   na.omit() -> zero.inund.2
 # p_success > 1 in one case... 
-#response <- zero.inund.2$p_success
-response <- zero.inund.2$prop_success/100
+response <- zero.inund.2$p_success
+#response <- zero.inund.2$prop_success/100
 
 predictors <- zero.inund.2 %>% select(-c(p_success, f_Season, Season, f_Sector, Sector))
 RF.data.zero.inund <- as.data.frame(scale(predictors))
@@ -269,13 +285,13 @@ RF.data.zero.inund$RV <- runif(nrow(RF.data.zero.inund), 0, 1)
 # ntree <- 500
 # 
 M.4 <- as.formula("p_success ~ Nest_Elevation +
-                  Berm_Dist + Northings + Eastings +
+                  Berm_Dist + Northings + Eastings + 
                   RV")
 
 RF.M.4.zero.inund <- cforest(formula = M.4,
                              data = RF.data.zero.inund,
                              control = cforest_unbiased(ntree = ntree,
-                                             trace = 500))
+                                                        trace = 500))
 if (save.file)
   saveRDS(RF.M.4, file = "RData/RF_M_4_zero_inund.out.rds")
 
@@ -359,17 +375,17 @@ Bayes.data <- as.data.frame(scale(predictors))
 #Bayes.data$Season <- ifelse(only.inund.2$f_Season == "17/18", 0, 1)
 
 jags.data <- list(y = response,
-                  X1 = Bayes.data$Max_Height,
-                  X2 = Bayes.data$Mean_Max_Height_Per_Event,
-                  X3 = Bayes.data$Hr_Inund_Phase_B,
-                  X4 = Bayes.data$Berm_Dist,
-                  X5 = Bayes.data$Nest_Elevation,
+                  X = cbind(1, Bayes.data$Max_Height,
+                            Bayes.data$Mean_Max_Height_Per_Event,
+                            Bayes.data$Hr_Inund_Phase_B,
+                            Bayes.data$Berm_Dist,
+                            Bayes.data$Nest_Elevation),
                   N = nrow(Bayes.data),
                   n.pred = 5)
 
 MCMC.params$model.file = "models/Model_logit_hatching.txt"
 
-parameters <- c("b0", "b",
+parameters <- c("b",
                 "sigma.y", "loglik", "deviance")
 
 jm.V5 <- jags(data = jags.data,
@@ -384,17 +400,23 @@ jm.V5 <- jags(data = jags.data,
              parallel=T)
 
 
+# need to get posterior samples
+varname <- c("b[1]", "b[2]", "b[3]", "b[4]", "b[5]", "b[6]")
+betas <- do.call(rbind, jm.V5$samples[, varname])
+
+R2.V5 <- bayes.logit.R2(jags.data$X, betas, jm.V5$samples, "sigma.y")
+
 jm.V5
 ```
 
 
-Berm_Dist has the smallest f value. so let's remove it...
+b[6] has the smallest f value. so let's remove it...
 ```{r}
-jags.data <- list(y = response,
-                  X1 = Bayes.data$Max_Height,
-                  X2 = Bayes.data$Mean_Max_Height_Per_Event,
-                  X3 = Bayes.data$Hr_Inund_Phase_B,
-                  X4 = Bayes.data$Nest_Elevation,
+jags.data <- list(y = response, #asin(sqrt(response)),
+                  X = cbind(1, Bayes.data$Max_Height,
+                            Bayes.data$Mean_Max_Height_Per_Event,
+                            Bayes.data$Hr_Inund_Phase_B,
+                            Bayes.data$Berm_Dist),
                   N = nrow(Bayes.data),
                   n.pred = 4)
 
@@ -409,17 +431,24 @@ jm.V4 <- jags(data = jags.data,
              DIC = T, 
              parallel=T)
 
+
+# need to get posterior samples
+varname <- c("b[1]", "b[2]", "b[3]", "b[4]", "b[5]")
+betas <- do.call(rbind, jm.V4$samples[, varname])
+
+R2.V4 <- bayes.logit.R2(jags.data$X, betas, jm.V4$samples, "sigma.y")
+
 jm.V4
 
 ```
 
-Berm_Dist is the lowest so remove. 
+b[4] is the lowest so remove. 
 
 ```{r}
-jags.data <- list(y = response,
-                  X1 = Bayes.data$Max_Height,
-                  X2 = Bayes.data$Mean_Max_Height_Per_Event,
-                  X3 = Bayes.data$Hr_Inund_Phase_B,
+jags.data <- list(y = response, #asin(sqrt(response)),
+                  X = cbind(1, Bayes.data$Max_Height,
+                            Bayes.data$Mean_Max_Height_Per_Event,
+                            Bayes.data$Berm_Dist),
                   N = nrow(Bayes.data),
                   n.pred = 3)
 
@@ -434,9 +463,18 @@ jm.V3 <- jags(data = jags.data,
              DIC = T, 
              parallel=T)
 
+
+# need to get posterior samples
+varname <- c("b[1]", "b[2]", "b[3]", "b[4]")
+betas <- do.call(rbind, jm.V3$samples[, varname])
+
+R2.V3 <- bayes.logit.R2(jags.data$X, betas, jm.V3$samples, "sigma.y")
+
 jm.V3
 
 ```
+
+
 
 ```{r}
 c(jm.V5$DIC, jm.V4$DIC, jm.V3$DIC)
@@ -467,6 +505,8 @@ LOOIC_DIC
 #plot(loo.out$loo.out)
 ```
 
+V3 seems the best. 
+
 They are not that different. PSIS plots
 
 ```{r}
@@ -484,25 +524,29 @@ plot(loo.out[[3]]$loo.out)
 ```
 
 
-Not bad... I see a couple of outliers. Let's take a look at those two.
+<!-- Not bad... I see a couple of outliers. Let's take a look at those two. -->
 
 ```{r}
-psis.3 <- loo.out[[3]]$loo.out$pointwise
-
-high.psis <- psis.3 %>% 
-  as.data.frame() %>% rownames_to_column("row_ID") %>%
-  filter(influence_pareto_k > 0.5)
-
-data.high.psis <- only.inund.2[high.psis$row_ID,]
-
-data.high.psis
+# psis.3 <- loo.out[[3]]$loo.out$pointwise
+# 
+# high.psis <- psis.3 %>% 
+#   as.data.frame() %>% rownames_to_column("row_ID") %>%
+#   filter(influence_pareto_k > 0.5)
+# 
+# data.high.psis <- only.inund.2[high.psis$row_ID,]
+# 
+# data.high.psis
 
 ```
 
-These are two extreme (not the most extreme) cases with low and high hatching success rates.
+<!-- These are two extreme (not the most extreme) cases with low and high hatching success rates. -->
 
-These models are pretty much the same. So, I'll just pick the simplest model with 3 variables: Max_Height, Mean_Max_Height_Per_Event, and Hr_Inund_Phase_B. 
 
+V3 is the best. 
+<!-- These models are pretty much the same. So, I'll just pick the simplest model with 3 variables: Max_Height, Mean_Max_Height_Per_Event, and Hr_Inund_Phase_B.  -->
+
+Max_Height,  Mean_Max_Height_Per_Event, Berm_Dist
+                            
 ```{r}
 jm.V3$summary %>% as.data.frame %>% rownames_to_column("parameter") -> tmp
 
@@ -515,38 +559,25 @@ tmp2
 
 b[1] (Max_Height) > 0; A positive relationship between Max_Height and p_success
 b[2] (Mean_Max_Height_Per_Event) < 0; A negative relationship between Mean_Max_Height_Per_Event and p_success
-b[3] (Hr_Inund_Phase_B) < 0; A negative relationship between Hr_Inund_Phase_B and p_success
+b[3] (Berm_Dist) < 0; A negative relationship between Berm_Dist and p_success
 
-Smaller maximum tide height of inundation events, greater mean maximum tide height per event, and longer inundation during Phase B (18-36 days) result in low hatching success rate. 
+Smaller maximum tide height of inundation events, greater mean maximum tide height per event, and greater Berm_Dist result in low hatching success rate. 
 
 Does this make sense...?
 
 ```{r}
-bayesplot::mcmc_trace(jm.V5$samples, c("b0", "b[1]", "b[2]", "b[3]"))
+bayesplot::mcmc_trace(jm.V3$samples, c("b[1]", "b[2]", "b[3]", "b[4]"))
 ```
 
 Not great trace plots, except the intercept... 
 
 ```{r}
-bayesplot::mcmc_dens(jm.V5$samples, c("b0", "b[1]", "b[2]", "b[3]"))
+bayesplot::mcmc_dens(jm.V3$samples, c("b[1]", "b[2]", "b[3]", "b[4]"))
 ```
 
 Try to compute Bayesian R2 values... Gelman et al. (2018)
 
 ```{r}
-y <- response    # observed data
-X <- Bayes.data %>% 
-  select(Max_Height, Mean_Max_Height_Per_Event, Hr_Inund_Phase_B) %>% 
-  as.matrix() 
-
-# Data matrix
-X <- cbind(1, X)
-
-# need to get posterior samples
-varname <- c("b0", "b[1]", "b[2]", "b[3]")
-betas <- do.call(rbind, jm.V3$samples[, varname])
-
-R2.V3 <- bayes.logit.R2(X, betas, jm.V3$samples, "sigma.y")
 
 ggplot(data = data.frame(R2 = R2.V3)) +
   geom_histogram(aes(x = R2), bins = 20)
@@ -555,3 +586,75 @@ ggplot(data = data.frame(R2 = R2.V3)) +
 
 R2 ~ 0.4... not great but not too bad either... 
 
+
+transform y using asine(sqrt(y))
+
+
+```{r}
+jags.data <- list(y = asin(sqrt(response)),
+                  X = cbind(1, Bayes.data$Max_Height,
+                            Bayes.data$Mean_Max_Height_Per_Event,
+                            Bayes.data$Hr_Inund_Phase_B,
+                            Bayes.data$Berm_Dist,
+                            Bayes.data$Nest_Elevation),
+                  N = nrow(Bayes.data),
+                  n.pred = 5)
+
+MCMC.params$model.file = "models/Model_linear_regression.txt"
+
+parameters <- c("b",
+                "sigma.y", "loglik", "deviance")
+
+jm.asine.V5 <- jags(data = jags.data,
+             #inits = inits,
+             parameters.to.save= parameters,
+             model.file = MCMC.params$model.file,
+             n.chains = MCMC.params$n.chains,
+             n.burnin = MCMC.params$n.burnin,
+             n.thin = MCMC.params$n.thin,
+             n.iter = MCMC.params$n.samples,
+             DIC = T, 
+             parallel=T)
+
+
+# need to get posterior samples
+varname <- c("b[1]", "b[2]", "b[3]", "b[4]", "b[5]", "b[6]")
+betas <- do.call(rbind, jm.asine.V5$samples[, varname])
+
+R2.asine.V5 <- bayes.logit.R2(jags.data$X, betas, jm.asine.V5$samples, "sigma.y")
+
+jm.asine.V5
+```
+
+
+
+
+```{r}
+jags.data <- list(y = asin(sqrt(response)),
+                  X = cbind(1, Bayes.data$Max_Height,
+                            Bayes.data$Mean_Max_Height_Per_Event,
+                            Bayes.data$Hr_Inund_Phase_B,
+                            Bayes.data$Berm_Dist),
+                  N = nrow(Bayes.data),
+                  n.pred = 4)
+
+jm.asine.V4 <- jags(data = jags.data,
+             #inits = inits,
+             parameters.to.save= parameters,
+             model.file = MCMC.params$model.file,
+             n.chains = MCMC.params$n.chains,
+             n.burnin = MCMC.params$n.burnin,
+             n.thin = MCMC.params$n.thin,
+             n.iter = MCMC.params$n.samples,
+             DIC = T, 
+             parallel=T)
+
+
+# need to get posterior samples
+varname <- c("b[1]", "b[2]", "b[3]", "b[4]", "b[5]")
+betas <- do.call(rbind, jm.asine.V4$samples[, varname])
+
+R2.asine.V4 <- bayes.logit.R2(jags.data$X, betas, jm.asine.V4$samples, "sigma.y")
+
+jm.asine.V4
+```

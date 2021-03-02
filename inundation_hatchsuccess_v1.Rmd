@@ -13,6 +13,7 @@ library(ggplot2)
 library(tidyverse)
 library(readr)
 library(lubridate)
+library(viridis)
 
 source("Dunstan_Inundation_fcns.R")
 save.fig <- T
@@ -232,9 +233,17 @@ for (k1 in 1:length(inundated.nests)){
                       nest.top.depth = nest.top.depth,
                       prop.inund = (Height_LAT - nest.bottom.depth)/0.3) -> logger.k
   
+  logger.k$prop.inund[logger.k$prop.inund > 1] <- 1.0
+  logger.k$prop.inund[logger.k$prop.inund < 0] <- 0.0
+  
   # extract the inundation recordings
   logger.k %>% filter(inund == 1) -> logger.k.inund 
     
+  inund.hrs.lt.25 <- 0.25 * (logger.k %>% filter(prop.inund > 0 & prop.inund < 0.25) %>% nrow())
+  inund.hrs.gt.25.lt.50 <- 0.25 * (logger.k %>% filter(prop.inund >= 0.25 & prop.inund < 0.5) %>% nrow())
+  inund.hrs.gt.50.lt.75 <- 0.25 * (logger.k %>% filter(prop.inund >= 0.5 & prop.inund < 0.75) %>% nrow())
+  inund.hrs.gt.75 <- 0.25 * (logger.k %>% filter(prop.inund >= 0.75) %>% nrow())
+  
   # if the nest was entirely underwater, no need to figure out how many times it was inundated
   # proportion of each inundation needs to be determined.
   if (nrow(logger.k.inund) == nrow(logger.k)){
@@ -347,6 +356,10 @@ for (k1 in 1:length(inundated.nests)){
                                 sd.inund.duration.hr = sqrt(var(inund.duration.hr)),
                                 mean.max.height.per.event = mean(max.height.per.event),
                                 sd.max.height.per.event = sqrt(var(max.height.per.event)),
+                                inund.hrs.lt.25 = inund.hrs.lt.25,
+                                inund.hrs.gt.25.lt.50 = inund.hrs.gt.25.lt.50,
+                                inund.hrs.gt.50.lt.75 = inund.hrs.gt.50.lt.75,
+                                inund.hrs.gt.75 = inund.hrs.gt.75,
                                 n.inund.phase1 = sum(inund.time.phase <= 18/51),
                                 n.inund.phase2 = sum(inund.time.phase > 18/51 & inund.time.phase <= 37/51),
                                 n.inund.phase3 = sum(inund.time.phase > 37/51),
@@ -361,14 +374,14 @@ for (k1 in 1:length(inundated.nests)){
 Let's make some plots to see how they look.
 
 ```{r}
-k <- 2
+k <- 60
 for (k in 1:length(inundated.nests)){
   
   p.inund <- ggplot() +
     geom_path(data = inundated.nests[[k]]$logger.data,
-              aes(x = Date_Time, y = Height_LAT)) +
-    geom_path(data = inundated.nests[[k]]$logger.inund.data,
-              aes(x = Date_Time, y = Height_LAT, color = as.factor(inund.ID))) +
+              aes(x = Date_Time, y = Height_LAT, color = prop.inund)) +
+    # geom_line(data = inundated.nests[[k]]$logger.data,
+    #           aes(x = Date_Time, y = Height_LAT, color = prop.inund)) +
     
     geom_hline(data = data.frame(nest.bottom.depth = inundated.nests[[k]]$nest.bottom.depth),
                aes(yintercept = nest.bottom.depth)) +
@@ -377,13 +390,14 @@ for (k in 1:length(inundated.nests)){
     geom_text(data = data.frame(inund.duration = inundated.nests[[k]]$duration.max.height.event,
                                 date.begin = pull(inundated.nests[[k]]$logger.data[2,], "Date_Time") +
                                   days(1),
-                                max.height = max.height),
+                                max.height = inundated.nests[[k]]$max.height),
               aes(x = date.begin, y = max.height, 
                   label = paste("Total inundation =", inund.duration, "hrs"),
                   hjust = 0)) +
     ggtitle(paste0("Nest_UID = ", inundated.nests[[k]]$nest.ID, 
                    ", Logger = ", inundated.nests[[k]]$logger.ID)) + 
-    theme(legend.position = "none")
+    theme(legend.position = "none") + 
+    scale_color_viridis(limits = c(0,1))
   
     if (save.fig) ggsave(filename = paste0("figures/inundation_nest_", 
                                            inundated.nests[[k]]$nest.ID, ".png"),
@@ -432,7 +446,15 @@ out.df <- data.frame(Nest_UID = unlist(lapply(inundated.nests,
                      Hr_Inund_Phase_B = unlist(lapply(inundated.nests, 
                                                          function(x) x$hr.inund.phase2)),
                      Hr_Inund_Phase_C = unlist(lapply(inundated.nests, 
-                                                         function(x) x$hr.inund.phase3)))
+                                                         function(x) x$hr.inund.phase3)),
+                     inund_hrs_lt_25 = unlist(lapply(inundated.nests, 
+                                                         function(x) x$inund.hrs.lt.25)),
+                     inund_hrs_gt_25_lt_50 = unlist(lapply(inundated.nests, 
+                                                           function(x) x$inund.hrs.gt.25.lt.50)),
+                     inund_hrs_gt_50_lt_75 = unlist(lapply(inundated.nests, 
+                                                           function(x) x$inund.hrs.gt.50.lt.75)),
+                     inund_hrs_gt_75 = unlist(lapply(inundated.nests, 
+                                                     function(x) x$inund.hrs.gt.75)))
 
 # remove empty columns
 inund %>% left_join(out.df, by = "Nest_UID") %>%
