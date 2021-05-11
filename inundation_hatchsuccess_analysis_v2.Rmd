@@ -1,0 +1,844 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This document follows Inundation_hatchsuccess_v1.Rmd. Data were extracted in the previous step. In this analysis, I sue Random Forest to predict hatching success. 
+
+```{r}
+# clear the workspace and bring in libraries
+rm(list=ls())
+library(tidyverse)
+library(party)
+library(betareg)
+library(jagsUI)
+library(bayesplot)
+library(loo)
+
+source("Dunstan_Inundation_fcns.R")
+
+save.fig <- F
+save.file <- F
+
+MCMC.params <- list(n.samples = 50000,
+                    n.burnin = 45000,
+                    n.thin = 5,
+                    n.chains = 5)
+
+```
+
+
+
+```{r}
+inund.cols <- cols(fid_ = col_integer(),
+                   Nest_UID = col_character(),
+                   Northings = col_double(),
+                   Eastings = col_double(),
+                   Nest_Eleva = col_double(),
+                   Berm_Dist = col_double(),
+                   Habitat = col_character(),
+                   Sector = col_character(),
+                   Island_Asp = col_character(),
+                   ID_closest = col_character(),
+                   Season = col_character(),
+                   Season_X = col_character(),
+                   Season_Y = col_character(),
+                   Survey = col_character(),
+                   Incubation = col_date(format = "%Y-%m-%d"),
+                   Incubati_1 = col_date(format = "%Y-%m-%d"),
+                   Date_dug = col_date(format = "%Y-%m-%d"),
+                   Hatched = col_integer(),
+                   Live_hatch = col_integer(),
+                   Dead_hatch = col_integer(),
+                   Phase_1 = col_integer(),
+                   Phase_2 = col_integer(),
+                   Phase_3 = col_integer(),
+                   Phase_4 = col_integer(),
+                   Phase_5 = col_integer(),
+                   Phase_6 = col_integer(),
+                   Decomposed = col_integer(),
+                   Total_unha = col_integer(),
+                   Total_clut = col_integer(),
+                   prop_succe = col_double(),
+                   Max_Height.x = col_double(),
+                   n_Inundati = col_integer(),
+                   Max_Inund_ = col_double(),
+                   Incubation_Finish = col_date(format = "%Y-%m-%d"),
+                   sector = col_character(),
+                   season = col_character(),
+                   Max_Height.y = col_double(), 
+                   n_Inundation = col_integer(), 
+                   Max_Inund_Duration_Hr = col_double(), 
+                   Total_Inund_Duration_Hr = col_double(),
+                   Mean_Inund_Duration_Hr = col_double(),
+                   Prop_Inund_Duration = col_double(),
+                   SD_Inund_Duration_Hr = col_double(),
+                   Mean_Max_Height_Per_Event = col_double(),
+                   SD_Max_Height_Per_Event = col_double(),
+                   n_Inund_Phase_A = col_integer(),
+                   n_Inund_Phase_B = col_integer(),
+                   n_Inund_Phase_C = col_integer(),
+                   Hr_Inund_Phase_A = col_double(),
+                   Hr_Inund_Phase_B = col_double(),
+                   Hr_Inund_Phase_C = col_double(),
+                   inund_hrs_lt_25 = col_double(),
+                   inund_hrs_gt_25_lt_50 = col_double(), 
+                   inund_hrs_gt_50_lt_75 = col_double(),
+                   inund_hrs_gt_75 = col_double())
+
+inund.1 <- read_csv(file = "data/inund_results_v2.csv",
+                    col_types = inund.cols)
+
+# remove four nests whose bottom height was above the nearest logger the entire duration.
+
+inund.1 %>% filter(!Nest_UID %in% c("1812-081", "1812-003", "1802-18", "1712-076")) -> inund.2
+```
+
+
+
+Visualizing the difference in hatching success between inundated and un-inundated nests: 
+
+```{r}
+inund.2 %>% filter(n_Inundation == 0) -> zero.inund
+inund.2 %>% filter(n_Inundation > 0) -> only.inund
+
+ggplot(data = zero.inund) + 
+  geom_histogram(aes(x = prop_succe),
+                 bins = 10) +
+    facet_grid(rows = vars(Season), cols = vars(Sector)) +
+  labs(title = "No inundation", x = "Proportion of success")
+
+# ggsave(filename = "figures/P_success_No_inundation.png",
+#        device = "png", dpi = 600)
+```
+
+```{r}
+ggplot(data = only.inund) + 
+  geom_histogram(aes(x = prop_succe),
+                 bins = 10) +
+  facet_grid(rows = vars(Season), cols = vars(Sector)) +
+  labs(title = "Inundation", x = "Proportion of success")
+
+# ggsave(filename = "figures/P_success_inundation.png",
+#        device = "png", dpi = 600)
+
+```
+
+Not all sectors were monitored over the two seasons...  
+
+
+Seems like disproportionate number of nests had zero hatching success when inundated. 
+
+Look at correlation among some variables in inundated data
+
+```{r}
+
+only.inund %>% select(Nest_Eleva, Berm_Dist, Season, Sector, Northings, Eastings,
+                      Hatched, Live_hatch, Total_clut, prop_succe,
+                      Max_Height.x, n_Inundati, Max_Inund_Duration_Hr,
+                      Total_Inund_Duration_Hr, Mean_Inund_Duration_Hr, 
+                      Prop_Inund_Duration, SD_Inund_Duration_Hr, Mean_Max_Height_Per_Event,
+                      SD_Max_Height_Per_Event, n_Inund_Phase_A, n_Inund_Phase_B,
+                      n_Inund_Phase_C, Hr_Inund_Phase_A, Hr_Inund_Phase_B, Hr_Inund_Phase_C,
+                      inund_hrs_lt_25, inund_hrs_gt_25_lt_50, inund_hrs_gt_50_lt_75,
+                      inund_hrs_gt_75) %>%
+  mutate(p_success = (Hatched + Live_hatch)/Total_clut,
+         f_Season = as.factor(Season),
+         f_Sector = as.factor(Sector),
+         Hr_Inund_Phase_AB = Hr_Inund_Phase_A + Hr_Inund_Phase_B,
+         Hr_Inund_Phase_AC = Hr_Inund_Phase_A + Hr_Inund_Phase_C,
+         Hr_Inund_Phase_BC = Hr_Inund_Phase_B + Hr_Inund_Phase_C) %>% 
+  
+  na.omit() -> only.inund.2
+
+only.inund.2 %>% select(p_success, Max_Height.x, 
+                        n_Inundati, Max_Inund_Duration_Hr,
+                        Total_Inund_Duration_Hr, Mean_Inund_Duration_Hr,
+                        Prop_Inund_Duration, SD_Inund_Duration_Hr, Mean_Max_Height_Per_Event,
+                        SD_Max_Height_Per_Event, n_Inund_Phase_A, n_Inund_Phase_B,
+                        n_Inund_Phase_C, Hr_Inund_Phase_A, Hr_Inund_Phase_B, Hr_Inund_Phase_C,
+                        Hr_Inund_Phase_AB, Hr_Inund_Phase_AC, Hr_Inund_Phase_BC,
+                        inund_hrs_lt_25, inund_hrs_gt_25_lt_50, inund_hrs_gt_50_lt_75,
+                        inund_hrs_gt_75) %>%
+  na.omit() -> only.inund.3
+
+cormat <- cor(only.inund.3)
+
+melted.cormat <- reshape2::melt(cormat)
+
+ggplot(data = melted.cormat ) + 
+  geom_tile(aes(x=Var1, y=Var2, fill=value)) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+                                   size = 9, hjust = 1))
+
+
+```
+
+Can we predict hatching success using these predictors? Random Forest
+
+Throw in all variables - not enough data points to use RF here... 
+
+```{r, echo=FALSE, results='hide'}
+response <- only.inund.2$prop_succe/100
+
+predictors <- only.inund.2 %>% select(-c(p_success, prop_succe, f_Season, Season, f_Sector, Sector))
+#RF.data <- as.data.frame(predictors)
+RF.data <- as.data.frame(scale(predictors))
+
+# Transform the proportion using asin (sqrt (p)) - may not be necessary...
+#RF.data$p_success <- asin(sqrt(response))
+
+RF.data$p_success <- response
+
+RF.data$RV <- runif(nrow(RF.data), 0, 1)
+
+ntree <- 500
+
+#                  Northings + 
+                  # Eastings +
+                  # Max_Height.x + 
+                  # inund_hrs_lt_25 + 
+                  # inund_hrs_gt_25_lt_50 + 
+                  # inund_hrs_gt_50_lt_75 +
+                  # inund_hrs_gt_75 +
+                  # n_Inund_Phase_A +
+                  # n_Inund_Phase_B +
+                  # n_Inund_Phase_C +
+                  # Hr_Inund_Phase_AB +
+                  # Hr_Inund_Phase_AC +
+                  # Hr_Inund_Phase_BC +
+                  # Prop_Inund_Duration + 
+                  # Hr_Inund_Phase_C +
+
+
+M.3 <- as.formula("p_success ~ Nest_Eleva + 
+                  Berm_Dist + 
+                  n_Inundati + 
+                  Max_Inund_Duration_Hr +
+                  Total_Inund_Duration_Hr + 
+                  Mean_Inund_Duration_Hr +
+                  SD_Inund_Duration_Hr +
+                  Mean_Max_Height_Per_Event +
+                  SD_Max_Height_Per_Event +
+                  Hr_Inund_Phase_A +
+                  Hr_Inund_Phase_B +
+                  RV")
+
+fit.1 <- lm(M.3, data = RF.data)
+summary(fit.1)
+
+# RF is not working... 2021-05-11
+RF.M.3 <- cforest(formula = M.3,
+                  data = RF.data,
+                  control = cforest_unbiased(ntree = ntree,
+                                             trace = 500))
+if (save.file)
+  saveRDS(RF.M.3, file = "RData/RF_M_3_out.rds")
+
+var.imp <- sort(varimp(RF.M.3), decreasing = FALSE)
+
+if (save.file)
+  saveRDS(var.imp, file = "RData/RF_M_3_varImp.rds")
+
+pred.RF.M.3 <- RF.M.3@predict_response()
+
+```
+
+
+Look at the variable importance:
+```{r}
+var.imp.df <- data.frame(var.imp)
+var.imp.df$Variable <- rownames(var.imp.df)
+
+ggplot(data = var.imp.df) + 
+  geom_point(aes(x = var.imp, y = reorder(Variable, var.imp)),
+             size = 3) + 
+  theme_bw() + 
+  labs(x = "Variable importance") + 
+  theme(axis.title.y = element_blank(),
+        axis.title.x = element_text(size =12))
+```
+
+
+```{r}
+# back transform asin(sqrt(x))  
+RF.data$p.success.prediction <- pred.RF.M.3
+ggplot(data = RF.data) +
+  #geom_point(aes(x = (sin(p_success))^2, y = (sin(p.success.prediction))^2)) + 
+  geom_point(aes(x = p_success, y = p.success.prediction)) + 
+  geom_abline(slope = 1.0, intercept = 0.0) + 
+  ylim(c(0, 1)) + 
+  labs(x = "Observed success rate", 
+       y = "Predicted success rate")
+
+```
+
+
+Pull out the top 7 variables and also add some interactions.
+
+```{r}
+only.inund.2 %>% select(Berm_Dist, Max_Height, Hr_Inund_Phase_AB, Mean_Max_Height_Per_Event,
+                   Nest_Elevation, Hr_Inund_Phase_B, n_Inund_Phase_B) %>%
+  mutate(Mean_Max_Height_Berm_Dist = Berm_Dist * Mean_Max_Height_Per_Event,
+         Max_Height_Berm_Dist = Berm_Dist * Max_Height) %>% 
+  scale() %>%
+  as.data.frame()  -> RF.data.2
+
+# Transform the proportion using asin (sqrt (p))
+#RF.data.2$p_success <- asin(sqrt(only.inund.2$prop_success/100))
+RF.data.2$p_success <- response
+RF.data.2$RV <- runif(nrow(RF.data.2), 0, 1)
+
+ntree <- 500
+
+M.5 <- as.formula("p_success ~ Berm_Dist + 
+                  Max_Height + 
+                  Hr_Inund_Phase_AB + 
+                  Mean_Max_Height_Per_Event +
+                  Nest_Elevation + 
+                  Hr_Inund_Phase_B + 
+                  n_Inund_Phase_B +
+                  Mean_Max_Height_Berm_Dist +
+                  Max_Height_Berm_Dist+
+                  RV")
+
+RF.M.5 <- cforest(formula = M.5,
+                  data = RF.data.2,
+                  control = cforest_unbiased(ntree = ntree,
+                                             trace = 500))
+
+
+var.imp <- sort(varimp(RF.M.5), decreasing = FALSE)
+
+if (save.file)
+  saveRDS(var.imp, file = "RData/RF_M_5_varImp.rds")
+
+pred.RF.M.5 <- RF.M.5@predict_response()
+
+```
+
+
+
+Look at the variable importance:
+
+```{r}
+var.imp.df <- data.frame(var.imp)
+var.imp.df$Variable <- rownames(var.imp.df)
+
+ggplot(data = var.imp.df) + 
+  geom_point(aes(x = var.imp, y = reorder(Variable, var.imp)),
+             size = 3) + 
+  theme_bw() + 
+  labs(x = "Variable importance") + 
+  theme(axis.title.y = element_blank(),
+        axis.title.x = element_text(size =12))
+```
+
+
+They seem to affect hatching success somewhat. Interesting to find that Phase B (18-36 days of incubation) affects more than other phases. 
+
+```{r}
+# back transform asin(sqrt(x))  
+RF.data$p.success.prediction <- pred.RF.M.5
+ggplot(data = RF.data) +
+  #geom_point(aes(x = (sin(p_success))^2, y = (sin(p.success.prediction))^2)) + 
+  geom_point(aes(x = p_success, y = p.success.prediction)) + 
+  geom_abline(slope = 1.0, intercept = 0.0) + 
+  ylim(c(0, 1)) + 
+  labs(x = "Observed success rate", 
+       y = "Predicted success rate")
+
+```
+
+Can't predict well... This is disappointing... 
+
+How about zero_inund data:
+
+Throw in all variables
+
+```{r, echo=FALSE, results='hide'}
+zero.inund %>% select(Nest_Elevation, Berm_Dist, Season, Sector, Northings, Eastings,
+                      Hatched, Live_hatchlings, Total_clutch, prop_success) %>%
+  mutate(p_success = prop_success/100,
+         f_Season = as.factor(Season),
+         f_Sector = as.factor(Sector)) %>% 
+  
+  na.omit() -> zero.inund.2
+# p_success > 1 in one case... 
+response <- zero.inund.2$p_success
+#response <- zero.inund.2$prop_success/100
+
+predictors <- zero.inund.2 %>% select(-c(p_success, f_Season, Season, f_Sector, Sector))
+RF.data.zero.inund <- as.data.frame(scale(predictors))
+
+#RF.data.zero.inund$p_success <- asin(sqrt(response))
+RF.data.zero.inund$p_success <- response
+RF.data.zero.inund$RV <- runif(nrow(RF.data.zero.inund), 0, 1)
+
+# ntree <- 500
+# 
+M.4 <- as.formula("p_success ~ Nest_Elevation +
+                  Berm_Dist + Northings + Eastings + 
+                  RV")
+
+RF.M.4.zero.inund <- cforest(formula = M.4,
+                             data = RF.data.zero.inund,
+                             control = cforest_unbiased(ntree = ntree,
+                                                        trace = 500))
+if (save.file)
+  saveRDS(RF.M.4, file = "RData/RF_M_4_zero_inund.out.rds")
+
+var.imp.zero.inund <- sort(varimp(RF.M.4.zero.inund), decreasing = FALSE)
+
+if (save.file)
+  saveRDS(var.imp.zero.inund, file = "RData/RF_M_4_zero_inund_varImp.rds")
+
+pred.RF.M.4.zero.inund <- RF.M.4.zero.inund@predict_response()
+
+```
+
+
+Look at the variable importance:
+```{r}
+var.imp.zero.inund.df <- data.frame(var.imp.zero.inund)
+var.imp.zero.inund.df$Variable <- rownames(var.imp.zero.inund.df)
+
+ggplot(data = var.imp.zero.inund.df) + 
+  geom_point(aes(x = var.imp.zero.inund, y = reorder(Variable, var.imp.zero.inund)),
+             size = 3) + 
+  theme_bw() + 
+  labs(x = "Variable importance") + 
+  theme(axis.title.y = element_blank(),
+        axis.title.x = element_text(size =12))
+```
+
+
+```{r}
+RF.data.zero.inund$p.success.prediction <- pred.RF.M.4.zero.inund
+ggplot(data = RF.data.zero.inund) +
+  #geom_point(aes(x = (sin(p_success))^2, y = (sin(p.success.prediction))^2)) + 
+  geom_point(aes(x = p_success, y = p.success.prediction)) + 
+  geom_abline(slope = 1.0, intercept = 0.0) + 
+  ylim(c(0, 1)) + 
+  labs(x = "Observed success rate", 
+       y = "Predicted success rate")
+
+```
+
+
+
+Try beta regression (betareg)
+
+```{r}
+
+betareg.data <- RF.data
+betareg.data$p.success.2 <- RF.data$p_success
+
+# 0 < 0 < 1
+# so, change zeros and 1s 
+betareg.data$p.success.2[betareg.data$p_success > 0.999] <- 0.999
+betareg.data$p.success.2[betareg.data$p_success < 0.001] <- 0.001
+betareg.data$f_Season <- only.inund.2$f_Season
+#betareg.data$f_Sector <- only.inund.2$f_Sector
+
+# Use the variables that were considered important in RF
+fit.betareg.1 <- betareg(p.success.2 ~ Berm_Dist + Max_Height + Mean_Max_Height_Per_Event + Hr_Inund_Phase_B +  Nest_Elevation + f_Season,
+                         data = betareg.data)
+
+summary(fit.betareg.1)
+```
+
+Including more predictors doesn't help tune the model. So, drop one at a time. Season was not useful at all... 
+
+```{r}
+fit.betareg.2 <- update(fit.betareg.1, .~. -f_Season)
+
+summary(fit.betareg.2)
+```
+
+I don't like looking at these p values... When do we call a variable not important?
+
+Let's try doing this in the Bayesian regression.
+
+```{r}
+response <- only.inund.2$p_success
+# get rid of non-numeric variables
+predictors <- only.inund.2 %>% select(-c(p_success, f_Season, Season, f_Sector, Sector))
+Bayes.data <- as.data.frame(scale(predictors))
+#Bayes.data$Season <- ifelse(only.inund.2$f_Season == "17/18", 0, 1)
+
+jags.data <- list(y = response,
+                  X = cbind(1, Bayes.data$Max_Height,
+                            Bayes.data$Mean_Max_Height_Per_Event,
+                            Bayes.data$Hr_Inund_Phase_B,
+                            Bayes.data$Berm_Dist,
+                            Bayes.data$Nest_Elevation),
+                  N = nrow(Bayes.data),
+                  n.pred = 5)
+
+MCMC.params$model.file = "models/Model_logit_hatching.txt"
+
+parameters <- c("b",
+                "sigma.y", "loglik", "deviance")
+
+jm.V5 <- jags(data = jags.data,
+             #inits = inits,
+             parameters.to.save= parameters,
+             model.file = MCMC.params$model.file,
+             n.chains = MCMC.params$n.chains,
+             n.burnin = MCMC.params$n.burnin,
+             n.thin = MCMC.params$n.thin,
+             n.iter = MCMC.params$n.samples,
+             DIC = T, 
+             parallel=T)
+
+
+# need to get posterior samples
+varname <- c("b[1]", "b[2]", "b[3]", "b[4]", "b[5]", "b[6]")
+betas <- do.call(rbind, jm.V5$samples[, varname])
+
+R2.V5 <- bayes.logit.R2(jags.data$X, betas, jm.V5$samples, "sigma.y")
+
+jm.V5
+```
+
+
+b[6] has the smallest f value. so let's remove it...
+
+```{r}
+jags.data <- list(y = response, #asin(sqrt(response)),
+                  X = cbind(1, Bayes.data$Max_Height,
+                            Bayes.data$Mean_Max_Height_Per_Event,
+                            Bayes.data$Hr_Inund_Phase_B,
+                            Bayes.data$Berm_Dist),
+                  N = nrow(Bayes.data),
+                  n.pred = 4)
+
+jm.V4 <- jags(data = jags.data,
+             #inits = inits,
+             parameters.to.save= parameters,
+             model.file = MCMC.params$model.file,
+             n.chains = MCMC.params$n.chains,
+             n.burnin = MCMC.params$n.burnin,
+             n.thin = MCMC.params$n.thin,
+             n.iter = MCMC.params$n.samples,
+             DIC = T, 
+             parallel=T)
+
+
+# need to get posterior samples
+varname <- c("b[1]", "b[2]", "b[3]", "b[4]", "b[5]")
+betas <- do.call(rbind, jm.V4$samples[, varname])
+
+R2.V4 <- bayes.logit.R2(jags.data$X, betas, jm.V4$samples, "sigma.y")
+
+jm.V4
+
+```
+
+b[4] is the lowest so remove. 
+
+```{r}
+jags.data <- list(y = response, #asin(sqrt(response)),
+                  X = cbind(1, Bayes.data$Max_Height,
+                            Bayes.data$Mean_Max_Height_Per_Event,
+                            Bayes.data$Berm_Dist),
+                  N = nrow(Bayes.data),
+                  n.pred = 3)
+
+jm.V3 <- jags(data = jags.data,
+             #inits = inits,
+             parameters.to.save= parameters,
+             model.file = MCMC.params$model.file,
+             n.chains = MCMC.params$n.chains,
+             n.burnin = MCMC.params$n.burnin,
+             n.thin = MCMC.params$n.thin,
+             n.iter = MCMC.params$n.samples,
+             DIC = T, 
+             parallel=T)
+
+
+# need to get posterior samples
+varname <- c("b[1]", "b[2]", "b[3]", "b[4]")
+betas <- do.call(rbind, jm.V3$samples[, varname])
+
+R2.V3 <- bayes.logit.R2(jags.data$X, betas, jm.V3$samples, "sigma.y")
+
+jm.V3
+
+```
+
+Could there be interactions...?
+
+```{r}
+predictors <- only.inund.2 %>% select(-c(p_success, f_Season, Season, f_Sector, Sector))
+predictors %>% mutate(Max_Height_Berm_Dist = Max_Height * Berm_Dist,
+                      Mean_Max_Height_Berm_Dist = Mean_Max_Height_Per_Event * Berm_Dist) -> predictors
+
+Bayes.data <- as.data.frame(scale(predictors))
+#Bayes.data$Season <- ifelse(only.inund.2$f_Season == "17/18", 0, 1)
+
+jags.data <- list(y = response,
+                  X = cbind(1, Bayes.data$Max_Height,
+                            Bayes.data$Mean_Max_Height_Per_Event,
+                            Bayes.data$Berm_Dist,
+                            Bayes.data$Max_Height_Berm_Dist,
+                            Bayes.data$Mean_Max_Height_Berm_Dist),
+                  N = nrow(Bayes.data),
+                  n.pred = 5)
+
+jm.V5.interactions <- jags(data = jags.data,
+             #inits = inits,
+             parameters.to.save= parameters,
+             model.file = MCMC.params$model.file,
+             n.chains = MCMC.params$n.chains,
+             n.burnin = MCMC.params$n.burnin,
+             n.thin = MCMC.params$n.thin,
+             n.iter = MCMC.params$n.samples,
+             DIC = T, 
+             parallel=T)
+
+
+# need to get posterior samples
+varname <- c("b[1]", "b[2]", "b[3]", "b[4]", "b[5]", "b[6]")
+betas <- do.call(rbind, jm.V5.interactions$samples[, varname])
+
+R2.V5.interactions <- bayes.logit.R2(jags.data$X, betas, jm.V5.interactions$samples, "sigma.y")
+
+jm.V5.interactions
+
+```
+
+Max_Height_Berm_Dist doesn't do too much so drop it.
+
+```{r}
+jags.data <- list(y = response,
+                  X = cbind(1, Bayes.data$Max_Height,
+                            Bayes.data$Mean_Max_Height_Per_Event,
+                            Bayes.data$Berm_Dist,
+                            Bayes.data$Mean_Max_Height_Berm_Dist),
+                  N = nrow(Bayes.data),
+                  n.pred = 4)
+
+jm.V4.interactions <- jags(data = jags.data,
+                           #inits = inits,
+                           parameters.to.save= parameters,
+                           model.file = MCMC.params$model.file,
+                           n.chains = MCMC.params$n.chains,
+                           n.burnin = MCMC.params$n.burnin,
+                           n.thin = MCMC.params$n.thin,
+                           n.iter = MCMC.params$n.samples,
+                           DIC = T, 
+                           parallel=T)
+
+
+# need to get posterior samples
+varname <- c("b[1]", "b[2]", "b[3]", "b[4]", "b[5]")
+betas <- do.call(rbind, jm.V4.interactions$samples[, varname])
+
+R2.V4.interactions <- bayes.logit.R2(jags.data$X, betas, jm.V4.interactions$samples, "sigma.y")
+
+jm.V4.interactions
+```
+
+
+
+
+
+```{r}
+c(jm.V5$DIC, jm.V4$DIC, jm.V3$DIC, jm.V5.interactions$DIC, jm.V4.interactions$DIC)
+```
+
+Look at LOOIC also
+
+```{r}
+n.params <- c(5, 4, 3, 5, 4)
+models <- c("V5", "V4", "V3", "V5_interactions", "V4_interactions")
+loo.out <- vector(mode = "list", length = length(n.params))
+model.out <- list(jm.V5, jm.V4, jm.V3, jm.V5.interactions, jm.V4.interactions)
+DIC <- LOOIC <- vector(mode = "numeric", length = length(n.params))
+for (k in 1:length(n.params)){
+  loo.out[[k]] <- compute.LOOIC(loglik = model.out[[k]]$sims.list$loglik,
+                                data.vector = jags.data$y,
+                                MCMC.params = MCMC.params)
+  DIC[k] <- model.out[[k]]$DIC
+  LOOIC[k] <- loo.out[[k]]$loo.out$estimates["looic","Estimate"] 
+}
+
+LOOIC_DIC <- data.frame(Model = models,
+                        dDIC = DIC - min(DIC),
+                        dLOOIC = LOOIC - min(LOOIC)) %>% arrange(by = dLOOIC)
+LOOIC_DIC
+#plot(loo.out$loo.out)
+```
+
+Ones with interactions seem to do better.   
+
+They are not that different. PSIS plots
+
+```{r}
+plot(loo.out[[1]]$loo.out)
+```
+
+
+
+```{r}
+plot(loo.out[[2]]$loo.out)
+```
+
+```{r}
+plot(loo.out[[3]]$loo.out)
+```
+
+
+```{r}
+plot(loo.out[[4]]$loo.out)
+```
+
+
+
+```{r}
+plot(loo.out[[5]]$loo.out)
+```
+
+All these diagnostics point to V4.interactions as the best. 
+
+<!-- Not bad... I see a couple of outliers. Let's take a look at those two. -->
+
+```{r}
+# psis.3 <- loo.out[[3]]$loo.out$pointwise
+# 
+# high.psis <- psis.3 %>% 
+#   as.data.frame() %>% rownames_to_column("row_ID") %>%
+#   filter(influence_pareto_k > 0.5)
+# 
+# data.high.psis <- only.inund.2[high.psis$row_ID,]
+# 
+# data.high.psis
+
+```
+
+<!-- These are two extreme (not the most extreme) cases with low and high hatching success rates. -->
+
+
+
+<!-- These models are pretty much the same. So, I'll just pick the simplest model with 3 variables: Max_Height, Mean_Max_Height_Per_Event, and Hr_Inund_Phase_B.  -->
+
+Max_Height,  Mean_Max_Height_Per_Event, Berm_Dist, Mean_Max_Height_Per_Event * Berm_Dist
+                            
+```{r}
+jm.V4.interactions$summary %>% as.data.frame %>% rownames_to_column("parameter") -> tmp
+
+tmp[grep("b", tmp$parameter),] %>% 
+  select(-c('25%', '75%', overlap0, f, Rhat, n.eff)) -> tmp2
+
+tmp2
+
+```
+
+b[2] (Max_Height) > 0; A positive relationship between Max_Height and p_success
+b[3] (Mean_Max_Height_Per_Event) < 0; A negative relationship between Mean_Max_Height_Per_Event and p_success
+b[4] (Berm_Dist) < 0; A negative relationship between Berm_Dist and p_success
+b[5] (Mean_Max_Height_Per_Event x Berm_Dist) > 0; A positive relationship
+
+Smaller maximum tide height of inundation events, greater mean maximum tide height per event, and greater distance from the berm result in low hatching success rate. How do I interpret the interaction term?
+
+Does this make sense...?
+
+
+
+```{r}
+bayesplot::mcmc_trace(jm.V4.interactions$samples, c("b[1]", "b[2]", "b[3]", "b[4]", "b[5]"))
+```
+
+Not great trace plots, except the intercept... 
+
+```{r}
+bayesplot::mcmc_dens(jm.V4.interactions$samples, c("b[1]", "b[2]", "b[3]", "b[4]", "b[5]"))
+```
+
+Try to compute Bayesian R2 values... Gelman et al. (2018)
+
+```{r}
+
+ggplot(data = data.frame(R2 = R2.V4.interactions)) +
+  geom_histogram(aes(x = R2), bins = 20)
+
+```
+
+R2 ~ 0.4... not great but not too bad either... 
+
+
+transform y using asine(sqrt(y))
+
+This turned out to be not useful at all...
+
+
+<!-- ```{r} -->
+<!-- jags.data <- list(y = asin(sqrt(response)), -->
+<!--                   X = cbind(1, Bayes.data$Max_Height, -->
+<!--                             Bayes.data$Mean_Max_Height_Per_Event, -->
+<!--                             Bayes.data$Hr_Inund_Phase_B, -->
+<!--                             Bayes.data$Berm_Dist, -->
+<!--                             Bayes.data$Nest_Elevation), -->
+<!--                   N = nrow(Bayes.data), -->
+<!--                   n.pred = 5) -->
+
+<!-- MCMC.params$model.file = "models/Model_linear_regression.txt" -->
+
+<!-- parameters <- c("b", -->
+<!--                 "sigma.y", "loglik", "deviance") -->
+
+<!-- jm.asine.V5 <- jags(data = jags.data, -->
+<!--              #inits = inits, -->
+<!--              parameters.to.save= parameters, -->
+<!--              model.file = MCMC.params$model.file, -->
+<!--              n.chains = MCMC.params$n.chains, -->
+<!--              n.burnin = MCMC.params$n.burnin, -->
+<!--              n.thin = MCMC.params$n.thin, -->
+<!--              n.iter = MCMC.params$n.samples, -->
+<!--              DIC = T,  -->
+<!--              parallel=T) -->
+
+
+<!-- # need to get posterior samples -->
+<!-- varname <- c("b[1]", "b[2]", "b[3]", "b[4]", "b[5]", "b[6]") -->
+<!-- betas <- do.call(rbind, jm.asine.V5$samples[, varname]) -->
+
+<!-- R2.asine.V5 <- bayes.logit.R2(jags.data$X, betas, jm.asine.V5$samples, "sigma.y") -->
+
+<!-- jm.asine.V5 -->
+<!-- ``` -->
+
+
+
+
+<!-- ```{r} -->
+<!-- jags.data <- list(y = asin(sqrt(response)), -->
+<!--                   X = cbind(1, Bayes.data$Max_Height, -->
+<!--                             Bayes.data$Mean_Max_Height_Per_Event, -->
+<!--                             Bayes.data$Hr_Inund_Phase_B, -->
+<!--                             Bayes.data$Berm_Dist), -->
+<!--                   N = nrow(Bayes.data), -->
+<!--                   n.pred = 4) -->
+
+<!-- jm.asine.V4 <- jags(data = jags.data, -->
+<!--              #inits = inits, -->
+<!--              parameters.to.save= parameters, -->
+<!--              model.file = MCMC.params$model.file, -->
+<!--              n.chains = MCMC.params$n.chains, -->
+<!--              n.burnin = MCMC.params$n.burnin, -->
+<!--              n.thin = MCMC.params$n.thin, -->
+<!--              n.iter = MCMC.params$n.samples, -->
+<!--              DIC = T,  -->
+<!--              parallel=T) -->
+
+
+<!-- # need to get posterior samples -->
+<!-- varname <- c("b[1]", "b[2]", "b[3]", "b[4]", "b[5]") -->
+<!-- betas <- do.call(rbind, jm.asine.V4$samples[, varname]) -->
+
+<!-- R2.asine.V4 <- bayes.logit.R2(jags.data$X, betas, jm.asine.V4$samples, "sigma.y") -->
+
+<!-- jm.asine.V4 -->
+<!-- ``` -->
