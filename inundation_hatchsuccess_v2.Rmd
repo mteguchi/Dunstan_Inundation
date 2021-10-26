@@ -18,8 +18,8 @@ library(lubridate)
 library(viridis)
 
 source("Dunstan_Inundation_fcns.R")
-save.fig <- T
-save.output <- T
+save.fig <- F
+save.output <- F
 
 ```
 
@@ -139,12 +139,13 @@ Maybe add the nest data on top of these plots
 ```{r}
 inund %>% 
   select(Nest_Eleva, ID_closest, prop_succe,
-         Incubation, Incubation_Finish) %>%
+         Incubation, Incubation_Finish, n_Inundati) %>%
   transmute(Logger_ID = ID_closest,
             Nest_Elevation = Nest_Eleva,
             Prop_Success = prop_succe,
             Date_Start = Incubation,
-            Date_End = Incubation_Finish) -> inund.2
+            Date_End = Incubation_Finish,
+            n_Inundation = n_Inundati) -> inund.2
 
 p.tide.loggers <- ggplot() + 
   geom_path(data = loggers,
@@ -164,6 +165,14 @@ if (save.fig)
          device = "png", dpi = 600)
 ```
 
+
+```{r}
+ggplot(data = inund.2) + 
+  geom_histogram(aes(x = Prop_Success),
+                 bins = 20) +
+  labs(title = "Inundation", x = "Proportion of success")
+
+```
 
 For each nest (row) in inund, data from one logger are assigned (ID_closest_logger). The tide height relative to the nest height is examined.
 
@@ -212,8 +221,6 @@ for (k in 1:nrow(inund)){
 }
 
 ```
-
-According to the plots, it was almost all-or-nothing. I asked Andy and Owen if I was using the right numbers, i.e., Height_LAT and Nest_Elevation. I have the feeling there has to be some sort of additions/subtractions need to happen? I'll wait for them to respond. It turned out, it was my error. I did not use "pull" to extract the nest elevation, which resulted in erroneous comparison with the Height_LAT. 
 
 Moving on with inundated nests... figuring out how many times each nest was inundated, how long each inundation event was, phase of incubation of each inundation event, maximum water height per inundation event, the duration of the highest inundation event.
 
@@ -410,7 +417,8 @@ for (k in 1:length(inundated.nests)){
                   hjust = 0)) +
     ggtitle(paste0("Nest_UID = ", inundated.nests[[k]]$nest.ID, 
                    ", Logger = ", inundated.nests[[k]]$logger.ID)) + 
-    theme(legend.position = "none") + 
+#    theme(legend.position = "none") + 
+    xlab("") +
     scale_color_viridis(limits = c(0,1))
   
     if (save.fig) ggsave(filename = paste0("figures/inundation_nest_", 

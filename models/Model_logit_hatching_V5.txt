@@ -1,0 +1,30 @@
+# JAGS model to fit a logit model to hatching success
+
+
+model{
+	for (i in 1:N){
+		logit(mu.y[i]) <- b0 + b[1] * X1[i] + b[2] * X2[i] + b[3] * X3[i] + b[4] * X4[i] + b[5] * X5[i]
+		y[i] ~ dnorm(mu.y[i], tau.y)
+		
+  	#mu.y[i] <- a/(a + b)
+    #var.y <-  (a*b)/((a+b+1) * (a+b)^2)	
+		#y[i] ~ dbeta(a, b)  
+		
+		loglik[i] <- logdensity.norm(y[i], mu.y[i], tau.y)
+		
+	}
+	
+	#a ~ dgamma(0.1, 0.01)
+	#b ~ dgamma(0.1, 0.01)
+	
+	sigma.y <- sqrt(1/tau.y)
+	tau.y ~ dgamma(0.1, 0.01)
+
+	b0 ~ dnorm(0, 0.01)
+	b1 ~ dnorm(0, 0.01)
+	b2 ~ dnorm(0, 0.01)
+	b3 ~ dnorm(0, 0.01)
+	b4 ~ dnorm(0, 0.01)
+	b5 ~ dnorm(0, 0.01)
+
+}

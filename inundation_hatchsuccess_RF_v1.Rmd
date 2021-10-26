@@ -1,0 +1,299 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This document follows Inundation_hatchsuccess_v1.Rmd. Data were extracted in the previous step. In this analysis, I sue Random Forest to predict hatching success. 
+
+```{r}
+# clear the workspace and bring in libraries
+rm(list=ls())
+library(ggplot2)
+library(tidyverse)
+library(readr)
+library(lubridate)
+library(party)
+
+source("Dunstan_Inundation_fcns.R")
+save.fig <- F
+save.output <- F
+
+```
+
+
+
+```{r}
+inund.cols <- cols(fid = col_integer(),
+                   Nest_UID = col_character(),
+                   Northings = col_double(),
+                   Eastings = col_double(),
+                   Nest_Elevation = col_double(),
+                   Berm_Dist = col_double(),
+                   Habitat = col_character(),
+                   Sector = col_character(),
+                   Island_Aspect = col_character(),
+                   ID_closest_logger = col_character(),
+                   Season = col_character(),
+                   Survey = col_character(),
+                   Incubation_Start = col_date(format = "%Y-%m-%d"),
+                   Incubation_Finish = col_date(format = "%Y-%m-%d"),
+                   Date_dug = col_date(format = "%Y-%m-%d"),
+                   Hatched = col_integer(),
+                   Live_hatchlings = col_integer(),
+                   Dead_hatchlings = col_integer(),
+                   Phase_1 = col_integer(),
+                   Phase_2 = col_integer(),
+                   Phase_3 = col_integer(),
+                   Phase_4 = col_integer(),
+                   Phase_5 = col_integer(),
+                   Phase_6 = col_integer(),
+                   Decomposed = col_integer(),
+                   Total_unhatched = col_integer(),
+                   Total_clutch = col_integer(),
+                   prop_success = col_double(),
+                   Max_Height = col_double(),
+                   n_Inundation = col_integer(),
+                   Max_Inund_Duration_Hr = col_double(),
+                   Total_Inund_Duration_Hr = col_double(),
+                   Mean_Inund_Duration_Hr = col_double(),
+                   Prop_Inund_Duration = col_double(),
+                   SD_Inund_Duration_Hr = col_double(),
+                   Mean_Max_Height_Per_Event = col_double(),
+                   SD_Max_Height_Per_Event = col_double(),
+                   n_Inund_Phase_A = col_integer(),
+                   n_Inund_Phase_B = col_integer(),
+                   n_Inund_Phase_C = col_integer(),
+                   Hr_Inund_Phase_A = col_double(),
+                   Hr_Inund_Phase_B = col_double(),
+                   Hr_Inund_Phase_C = col_double())
+
+inund.2 <- read_csv(file = "data/inund_results.csv",
+                    col_types = inund.cols)
+
+```
+
+
+
+Visualizing the difference in hatching success between inundated and un-inundated nests: 
+
+```{r}
+inund.2 %>% filter(n_Inundation == 0) -> zero.inund
+inund.2 %>% filter(n_Inundation > 0) -> only.inund
+
+ggplot(data = zero.inund) + 
+  geom_histogram(aes(x = prop_success),
+                 bins = 20) +
+  labs(title = "No inundation", x = "Proportion of success")
+```
+
+```{r}
+ggplot(data = only.inund) + 
+  geom_histogram(aes(x = prop_success),
+                 bins = 20) +
+  labs(title = "Inundation", x = "Proportion of success")
+
+```
+
+
+Seems like disproportionate number of nests had zero hatching success when inundated. 
+
+Look at correlation among some variables in inundated data
+
+```{r}
+
+only.inund %>% select(Nest_Elevation, Berm_Dist, Season,
+                      Hatched, Live_hatchlings, Total_clutch, prop_success,
+                      Max_Height, n_Inundation, Max_Inund_Duration_Hr,
+                      Total_Inund_Duration_Hr, Mean_Inund_Duration_Hr, 
+                      Prop_Inund_Duration, SD_Inund_Duration_Hr, Mean_Max_Height_Per_Event,
+                      SD_Max_Height_Per_Event, n_Inund_Phase_A, n_Inund_Phase_B,
+                      n_Inund_Phase_C, Hr_Inund_Phase_A, Hr_Inund_Phase_B, Hr_Inund_Phase_C) %>%
+  mutate(p_success = (Hatched + Live_hatchlings)/Total_clutch,
+         f_Season = as.factor(Season)) %>% 
+  
+  na.omit() -> only.inund.2
+
+only.inund.2 %>% select(p_success, Max_Height, n_Inundation, Max_Inund_Duration_Hr,
+                      Total_Inund_Duration_Hr, Mean_Inund_Duration_Hr,
+                      Prop_Inund_Duration, SD_Inund_Duration_Hr, Mean_Max_Height_Per_Event,
+                      SD_Max_Height_Per_Event, n_Inund_Phase_A, n_Inund_Phase_B,
+                      n_Inund_Phase_C, Hr_Inund_Phase_A, Hr_Inund_Phase_B, Hr_Inund_Phase_C) %>%
+  na.omit() -> only.inund.3
+
+cormat <- cor(only.inund.3)
+
+melted.cormat <- reshape2::melt(cormat)
+
+ggplot(data = melted.cormat ) + 
+  geom_tile(aes(x=Var1, y=Var2, fill=value)) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+                                   size = 9, hjust = 1))
+
+
+```
+
+Can we predict hatching success using these predictors?
+
+```{r}
+response <- only.inund.2$p_success
+
+predictors <- only.inund.2 %>% select(-c(p_success, f_Season, Season))
+RF.data <- as.data.frame(scale(predictors))
+
+RF.data$p_success <- response
+RF.data$RV <- runif(nrow(RF.data), 0, 1)
+```
+
+
+
+```{r}
+
+ntree <- 500
+
+M.3 <- as.formula("p_success ~ Nest_Elevation + 
+                  Berm_Dist + 
+                  Max_Height + 
+                  n_Inundation + 
+                  Max_Inund_Duration_Hr +
+                  Total_Inund_Duration_Hr + 
+                  Mean_Inund_Duration_Hr +
+                  Prop_Inund_Duration + 
+                  SD_Inund_Duration_Hr +
+                  Mean_Max_Height_Per_Event +
+                  SD_Max_Height_Per_Event +
+                  n_Inund_Phase_A +
+                  n_Inund_Phase_B +
+                  n_Inund_Phase_C +
+                  Hr_Inund_Phase_A +
+                  Hr_Inund_Phase_B +
+                  Hr_Inund_Phase_C +
+                  RV")
+
+RF.M.3 <- cforest(formula = M.3,
+                  data = RF.data,
+                  control = cforest_unbiased(ntree = ntree,
+                                             trace = 500))
+saveRDS(RF.M.3, file = "RData/RF_M_3_out.rds")
+
+var.imp <- sort(varimp(RF.M.3), decreasing = FALSE)
+saveRDS(var.imp, file = "RData/RF_M_3_varImp.rds")
+
+pred.RF.M.3 <- RF.M.3@predict_response()
+
+```
+
+
+Look at the variable importance:
+```{r}
+var.imp.df <- data.frame(var.imp)
+var.imp.df$Variable <- rownames(var.imp.df)
+
+ggplot(data = var.imp.df) + 
+  geom_point(aes(x = var.imp, y = reorder(Variable, var.imp)),
+             size = 3) + 
+  theme_bw() + 
+  labs(x = "Variable importance") + 
+  theme(axis.title.y = element_blank(),
+        axis.title.x = element_text(size =12))
+```
+
+They seem to affect hatching success somewhat. Interesting to find that Phase B (18-36 days of incubation) affects more than other phases. 
+
+```{r}
+RF.data$p.success.prediction <- pred.RF.M.3
+ggplot(data = RF.data) +
+  geom_point(aes(x = p_success, y = p.success.prediction)) + 
+  geom_abline(slope = 1.0, intercept = 0.0) + 
+  ylim(c(0, 1)) + 
+  labs(x = "Observed success rate", 
+       y = "Predicted success rate")
+
+```
+
+Can't predict... This is disappointing... 
+
+Try beta regression (betareg)
+
+```{r}
+library(betareg)
+betareg.data <- RF.data
+betareg.data$p.success.2 <- RF.data$p_success
+betareg.data$p.success.2[betareg.data$p_success > 0.999] <- 0.999
+betareg.data$p.success.2[betareg.data$p_success < 0.001] <- 0.001
+betareg.data$f_Season <- only.inund.2$f_Season
+
+fit.betareg.1 <- betareg(p.success.2 ~ Berm_Dist + Max_Height + Mean_Max_Height_Per_Event + Hr_Inund_Phase_B + n_Inund_Phase_B + f_Season,
+                         data = betareg.data)
+
+summary(fit.betareg.1)
+```
+
+Hours and the number of inundation during phase B (18-36 days of incubation; middle third) seem to affect the proportion of hatching success, although the signs are opposite. 
+
+Including more predictors doesn't help tune the model.
+
+```{r}
+fit.betareg.2 <- betareg(p.success.2 ~ Berm_Dist + Max_Height + Mean_Max_Height_Per_Event + Hr_Inund_Phase_B + n_Inund_Phase_B ,
+                         data = betareg.data)
+
+summary(fit.betareg.2)
+```
+
+
+
+```{r}
+fit.betareg.3 <- betareg(p.success.2 ~ Berm_Dist + Max_Height + Mean_Max_Height_Per_Event + Hr_Inund_Phase_B ,
+                         data = betareg.data)
+
+summary(fit.betareg.3)
+```
+
+
+Let's try doing this in the Bayesian regression.
+
+
+```{r}
+response <- only.inund.2$p_success
+# get rid of non-numeric variables
+predictors <- only.inund.2 %>% select(-c(p_success, f_Season, Season))
+Bayes.data <- as.data.frame(scale(predictors))
+Bayes.data$Season <- ifelse(only.inund.2$f_Season == "17/18", 0, 1)
+
+library(jagsUI)
+library(bayesplot)
+
+jags.data <- list(y = response,
+                  X1 = Bayes.data$Max_Height,
+                  X2 = Bayes.data$Mean_Max_Height_Per_Event,
+                  X3 = Bayes.data$Hr_Inund_Phase_B,
+                  X4 = Bayes.data$n_Inund_Phase_B,
+                  X5 = Bayes.data$Berm_Dist,
+                  X6 = Bayes.data$Season,
+                  N = nrow(Bayes.data))
+
+MCMC.params <- list(n.samples = 10000,
+                    n.burnin = 5000,
+                    n.thin = 5,
+                    n.chains = 5)
+
+MCMC.params$model.file = "models/Model_logit_hatching.txt"
+
+parameters <- c("b0", "b1", "b2", "b3", "b4", "b5", "b6",
+                "sigma.y", "loglik", "deviance")
+
+jm.2 <- jags(data = jags.data,
+             #inits = inits,
+             parameters.to.save= parameters,
+             model.file = MCMC.params$model.file,
+             n.chains = MCMC.params$n.chains,
+             n.burnin = MCMC.params$n.burnin,
+             n.thin = MCMC.params$n.thin,
+             n.iter = MCMC.params$n.samples,
+             DIC = T, 
+             parallel=T)
+
+```
+
+
+
+ 
