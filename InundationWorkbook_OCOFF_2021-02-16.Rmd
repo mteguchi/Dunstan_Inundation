@@ -1,0 +1,1025 @@
+---
+title: "RIRP Inundation Workbook"
+author: "O Coffee"
+date: "20/01/2020"
+output:
+  pdf_document: default
+  html_document: default
+editor_options:
+  chunk_output_type: console
+---
+##Insert new chunks = Ctrl + Alt + i
+
+##Open libraries
+```{r}
+library("vegan")
+library("RgoogleMaps")
+library("labdsv")
+library("MASS")
+library("ggmap")
+library("readr")
+library("data.table")
+library("ggplot2")
+library("dplyr")
+library("ggpubr")
+library("readr")
+library("rcompanion")
+library("car")
+library("tidyverse")
+library("mgcv")
+library("knitr")
+library("rmarkdown")
+library("basicTrendline")
+library("compositions")
+library("devtools")
+library("maptools")
+library("rgdal")
+library("rgeos")
+library("tinytex")
+library("moments")
+library("olsrr")
+
+```
+
+
+##Load data files
+```{r}
+
+setwd("D:/OCOFF_RIRP/Inundation/Data/R_Scripts")
+
+inund <- read_csv("CSVs/inundationRaine.csv")
+View(inund)
+
+Nest_18Map <- read_csv("CSVs/2018Nest_mapping.csv")
+View(Nest_18Map)
+
+Nest_18INUND <- read_csv("CSVs/2018Nest_INUND.csv")
+View(Nest_18INUND)
+
+Agg_INUND <- read_csv("CSVs/Inund_concat.csv", 
+    col_types = cols(`Barometric Pressure (Hpa)` = col_number(), 
+         MAX_AVGWind = col_number(), MAX_Wind = col_number(), 
+         `Rainfall (mm)` = col_number(), T2_4 = col_number(), 
+         T3_1 = col_number(), T3_2 = col_number(), 
+         T4_1 = col_number(), T4_2 = col_number(), 
+         T4_3 = col_number(), T4_4 = col_number(), 
+         T5_1 = col_number(), T5_2 = col_number(), 
+         T5_4 = col_number(), `Tide Height` = col_number()))
+ View(Agg_INUND)
+
+ 
+Wells_5Apr16 <- read_csv("CSVs/DirectWells_5April2016.csv")
+ Wells_5Apr16 <- Wells_5Apr16[c(-9)]
+  Wells_5Apr16 <- na.omit(Wells_5Apr16) 
+   
+Wells_6Apr16 <- read_csv("CSVs/DirectWells_6April2016.csv")
+ 
+Tides_Apr16 <- read_csv("CSVs/PredictedTides_April2016.csv")
+ 
+inund_Apr16 <- read_csv("CSVs/InundLoggers_April2016.csv")
+ 
+ 
+ 
+
+```
+
+#Regressions of Inund loggers and environmental variables - Data sorting
+```{r}
+
+str(Agg_INUND)
+colnames(Agg_INUND)
+
+names(Agg_INUND)[names(Agg_INUND) == "Tide Height"] <- "T_Height"
+names(Agg_INUND)[names(Agg_INUND) == "Rainfall (mm)"] <- "Rainfall" 
+names(Agg_INUND)[names(Agg_INUND) == "Barometric Pressure (Hpa)"] <- "Baro_Press"
+
+#Scatterplots
+#T_Height
+plot(Agg_INUND$T_Height,Agg_INUND$T2_4)
+plot(Agg_INUND$T_Height,Agg_INUND$T3_1) # not linear
+plot(Agg_INUND$T_Height,Agg_INUND$T3_2) # not linear
+plot(Agg_INUND$T_Height,Agg_INUND$T4_1)
+plot(Agg_INUND$T_Height,Agg_INUND$T4_2)
+plot(Agg_INUND$T_Height,Agg_INUND$T4_3)
+plot(Agg_INUND$T_Height,Agg_INUND$T4_4)
+plot(Agg_INUND$T_Height,Agg_INUND$T5_1)
+plot(Agg_INUND$T_Height,Agg_INUND$T5_2) # not linear
+plot(Agg_INUND$T_Height,Agg_INUND$T5_4)
+
+#Rainfall
+plot(Agg_INUND$Rainfall,Agg_INUND$T2_4)
+plot(Agg_INUND$Rainfall,Agg_INUND$T3_1)
+plot(Agg_INUND$Rainfall,Agg_INUND$T3_2)
+plot(Agg_INUND$Rainfall,Agg_INUND$T4_1)
+plot(Agg_INUND$Rainfall,Agg_INUND$T4_2)
+plot(Agg_INUND$Rainfall,Agg_INUND$T4_3)
+plot(Agg_INUND$Rainfall,Agg_INUND$T4_4)
+plot(Agg_INUND$Rainfall,Agg_INUND$T5_1)
+plot(Agg_INUND$Rainfall,Agg_INUND$T5_2)
+plot(Agg_INUND$Rainfall,Agg_INUND$T5_4)
+
+#Baro_Press
+plot(Agg_INUND$Baro_Press,Agg_INUND$T2_4)
+plot(Agg_INUND$Baro_Press,Agg_INUND$T3_1)
+plot(Agg_INUND$Baro_Press,Agg_INUND$T3_2)
+plot(Agg_INUND$Baro_Press,Agg_INUND$T4_1)
+plot(Agg_INUND$Baro_Press,Agg_INUND$T4_2)
+plot(Agg_INUND$Baro_Press,Agg_INUND$T4_3)
+plot(Agg_INUND$Baro_Press,Agg_INUND$T4_4)
+plot(Agg_INUND$Baro_Press,Agg_INUND$T5_1)
+plot(Agg_INUND$Baro_Press,Agg_INUND$T5_2)
+plot(Agg_INUND$Baro_Press,Agg_INUND$T5_4)
+
+#Wind
+plot(Agg_INUND$MAX_Wind,Agg_INUND$T2_4) 
+plot(Agg_INUND$MAX_Wind,Agg_INUND$T3_1)
+plot(Agg_INUND$MAX_Wind,Agg_INUND$T3_2)
+plot(Agg_INUND$MAX_Wind,Agg_INUND$T4_1)
+plot(Agg_INUND$MAX_Wind,Agg_INUND$T4_2)
+plot(Agg_INUND$MAX_Wind,Agg_INUND$T4_3)
+plot(Agg_INUND$MAX_Wind,Agg_INUND$T4_4)
+plot(Agg_INUND$MAX_Wind,Agg_INUND$T5_1)
+plot(Agg_INUND$MAX_Wind,Agg_INUND$T5_2)
+plot(Agg_INUND$MAX_Wind,Agg_INUND$T5_4)
+
+#Omit NAs
+#INUND <- subset(Agg_INUND, select= -c(T2_1,T2_2))
+INUND <- INUND[!is.na(INUND)]
+str(INUND)
+
+#Normality tests
+ggdensity(Agg_INUND$T2_4) #+'ve skew
+ggdensity(Agg_INUND$T3_1) # v. +'ve skew
+ggdensity(Agg_INUND$T3_2) # v. +'ve skew
+ggdensity(Agg_INUND$T4_1) #+'ve skew
+ggdensity(Agg_INUND$T4_2) #+'ve skew
+ggdensity(Agg_INUND$T4_3) #+'ve skew
+ggdensity(Agg_INUND$T4_4) #+'ve skew
+ggdensity(Agg_INUND$T5_1) #+'ve skew
+ggdensity(Agg_INUND$T5_2) # v. +'ve skew
+ggdensity(Agg_INUND$T5_4) # v. +'ve skew
+
+#Skew and kurtosis
+skewness(Agg_INUND$T2_4, na.rm= TRUE) #0.741
+skewness(Agg_INUND$T3_1, na.rm= TRUE) #2.335
+skewness(Agg_INUND$T3_2, na.rm= TRUE) #1.499
+skewness(Agg_INUND$T4_1, na.rm= TRUE) #0.829
+skewness(Agg_INUND$T4_2, na.rm= TRUE) #1.249
+skewness(Agg_INUND$T4_3, na.rm= TRUE) #1.392
+skewness(Agg_INUND$T4_4, na.rm= TRUE) #0.719
+skewness(Agg_INUND$T5_1, na.rm= TRUE) #0.478
+skewness(Agg_INUND$T5_2, na.rm= TRUE) #1.627
+skewness(Agg_INUND$T5_4, na.rm= TRUE) #0.716
+
+kurtosis(Agg_INUND$T2_4, na.rm= TRUE) #4.772
+kurtosis(Agg_INUND$T3_1, na.rm= TRUE) #9.301
+kurtosis(Agg_INUND$T3_2, na.rm= TRUE) #5.244
+kurtosis(Agg_INUND$T4_1, na.rm= TRUE) #3.511
+kurtosis(Agg_INUND$T4_2, na.rm= TRUE) #6.268
+kurtosis(Agg_INUND$T4_3, na.rm= TRUE) #8.694
+kurtosis(Agg_INUND$T4_4, na.rm= TRUE) #5.779
+kurtosis(Agg_INUND$T5_1, na.rm= TRUE) #3.328
+kurtosis(Agg_INUND$T5_2, na.rm= TRUE) #5.016
+kurtosis(Agg_INUND$T5_4, na.rm= TRUE) #2.840
+
+ggqqplot(Agg_INUND$T2_4) 
+ggqqplot(Agg_INUND$T3_1) #v. poor fit
+ggqqplot(Agg_INUND$T3_2) #v. poor fit
+ggqqplot(Agg_INUND$T4_1) 
+ggqqplot(Agg_INUND$T4_2) 
+ggqqplot(Agg_INUND$T4_3) 
+ggqqplot(Agg_INUND$T4_4) 
+ggqqplot(Agg_INUND$T5_1) 
+ggqqplot(Agg_INUND$T5_2) #v. poor fit
+ggqqplot(Agg_INUND$T5_4) 
+
+shapiro.test(Agg_INUND$T2_4) #W = 0.96553, p-value = 9.278e-10
+shapiro.test(Agg_INUND$T3_1) #W = 0.66403, p-value < 2.2e-16
+shapiro.test(Agg_INUND$T3_2) #W = 0.84263, p-value < 2.2e-16
+shapiro.test(Agg_INUND$T4_1) #W = 0.95069, p-value = 3.924e-11
+shapiro.test(Agg_INUND$T4_2) #W = 0.9192, p-value = 3.62e-08
+shapiro.test(Agg_INUND$T4_3) #W = 0.91832, p-value = 1.357e-15
+shapiro.test(Agg_INUND$T4_4) #W = 0.96696, p-value = 1.732e-09
+shapiro.test(Agg_INUND$T5_1) #W = 0.98603, p-value = 6.186e-05
+shapiro.test(Agg_INUND$T5_2) #W = 0.73363, p-value < 2.2e-16
+shapiro.test(Agg_INUND$T5_4) #W = 0.94856, p-value = 1.537e-12
+
+#All loggers - dist. not normal, exponential
+
+```
+
+#Regressions of Inund loggers and environmental variables
+```{r}
+#Regressing individual loggers
+#2_4
+model2_4 <- lm (T2_4 ~ T_Height, data = Agg_INUND)
+model2_4a <- lm (log(T2_4) ~ T_Height, data = Agg_INUND)
+
+ols_test_normality(model2_4) # K-S >0.05, but all other tests indicate violation of normality assumptions
+ols_plot_resid_qq(model2_4)
+ols_plot_resid_fit(model2_4)
+ols_plot_resid_hist(model2_4) #Diagnostic plots indicate a reasonable adherence to normality in the residuals
+summary(model2_4)
+
+summary(model2_4a)
+#
+
+#3_1
+model3_1 <- lm (T3_1 ~ T_Height, data = Agg_INUND)
+
+ols_test_normality(model3_1) # All tests indicate violation of normality assumptions
+ols_plot_resid_qq(model3_1)
+ols_plot_resid_fit(model3_1) #Poor fit
+ols_plot_resid_hist(model3_1) #Diagnostic plots indicate trend toward exponential distribution
+
+kurtosis(model3_1$residuals) #7.569
+skewness(model3_1$residuals) #1.454
+#Exponential...Transform?
+
+#3_2
+model3_2 <- lm (T3_2 ~ T_Height, data = Agg_INUND)
+
+ols_test_normality(model3_2) # K-S >0.05, but all other tests indicate violation of normality assumptions
+ols_plot_resid_qq(model3_2)
+ols_plot_resid_fit(model3_2) #Poor fit
+ols_plot_resid_hist(model3_2) #Diagnostic plots indicate trend toward exponential distribution
+
+kurtosis(model3_2$residuals) #4.157
+skewness(model3_2$residuals) #0.634
+
+summary(model3_2)
+#Transform?
+
+#4_1
+model4_1 <- lm (T4_1 ~ T_Height, data = Agg_INUND)
+
+ols_test_normality(model4_1) # All tests indicate violation of normality assumptions
+ols_plot_resid_qq(model4_1)
+ols_plot_resid_fit(model4_1)
+ols_plot_resid_hist(model4_1) #Diagnostic plots indicate trend toward exponential distribution
+
+kurtosis(model4_1$residuals) #3.569
+skewness(model4_1$residuals) #0.656
+
+summary(model4_1)
+#Transform?
+
+#4_2
+model4_2 <- lm (T4_2 ~ T_Height, data = Agg_INUND)
+
+ols_test_normality(model4_2) # All tests indicate violation of noramality assumptions
+ols_plot_resid_qq(model4_2)
+ols_plot_resid_fit(model4_2)
+ols_plot_resid_hist(model4_2) # Exponential distribution
+
+kurtosis(model4_2$residuals) #8.765
+skewness(model4_2$residuals) #1.745
+
+#Transform?
+
+#4_3
+model4_3 <- lm (T4_3 ~ T_Height, data = Agg_INUND)
+
+ols_test_normality(model4_3) # All tests indicate violation of normality assumptions
+ols_plot_resid_qq(model4_3)
+ols_plot_resid_fit(model4_3) #Some outliers
+ols_plot_resid_hist(model4_3) #Diagnostic plots indicate a reasonable adherence to normality in the residuals
+
+summary(model4_3)
+
+#4_4
+model4_4 <- lm (T4_4 ~ T_Height, data = Agg_INUND)
+
+ols_test_normality(model4_4) # All tests indicate violation of normality assumptions
+ols_plot_resid_qq(model4_4)
+ols_plot_resid_fit(model4_4) #Some outliers
+ols_plot_resid_hist(model4_4) #Diagnostic plots indicate a reasonable adherence to normality in the residuals
+
+summary(model4_4)
+
+#5_1
+model5_1 <- lm (T5_1 ~ T_Height, data = Agg_INUND)
+
+ols_test_normality(model5_1) # K-S >0.05, but all other tests indicate violation of normality assumptions
+ols_plot_resid_qq(model5_1)
+ols_plot_resid_fit(model5_1)
+ols_plot_resid_hist(model5_1) #Diagnostic plots indicate a reasonable adherence to normality in the residuals, slight negative skew
+
+skewness(model5_1$residuals) #-0.197
+
+summary(model5_1)
+
+#5_2
+model5_2 <- lm (T5_2 ~ T_Height, data = Agg_INUND)
+
+ols_test_normality(model5_2) # All tests indicate violation of normality assumptions
+ols_plot_resid_qq(model5_2)
+ols_plot_resid_fit(model5_2)
+ols_plot_resid_hist(model5_2) #Diagnostic plots indicate a exponential distribution
+
+kurtosis(model5_2$residuals) #3.189
+skewness(model5_2$residuals) #1.097
+
+summary(model5_2)
+#Transform?
+
+#5_4
+model5_4 <- lm (T5_4 ~ T_Height, data = Agg_INUND)
+
+ols_test_normality(model5_4) # K-S,S-W & A-D >0.05, C-vM < 0.05 
+ols_plot_resid_qq(model5_4)
+ols_plot_resid_fit(model5_4)
+ols_plot_resid_hist(model5_4) #Diagnostic plots indicate a reasonable adherence to normality in the residuals
+
+summary(model5_4)
+```
+
+#Numerous loggers violate assumption of normality, trial exp transformation and review then investigate via multiple or potentially a multivariate multiple regression the interaction between all loggers and the predictors; Rainfall, Baro_Press, MAX_Wind & MAX_AVGWind
+```{r}
+
+logAgg_INUND <- Agg_INUND %>%
+  mutate(logT2_4 = log(T2_4),
+         logT3_1 = log(T3_1),
+         logT3_2 = log(T3_2),
+         logT4_1 = log(T4_1),
+         logT4_2 = log(T4_2),
+         logT4_3 = log(T4_3),
+         logT4_4 = log(T4_4),
+         logT5_1 = log(T5_1),
+         logT5_2 = log(T5_2),
+         logT5_4 = log(T5_4),)
+
+
+#Tide Height Multivariate regression
+Tidelm <- lm(cbind(logT2_4,logT3_1,logT3_2,logT4_1,logT4_2,logT4_3,logT4_4,logT5_1,logT5_2,logT5_4) ~ T_Height , data = logAgg_INUND)
+
+anova(Tidelm)
+head(resid(Tidelm))
+
+
+#Correlation for all loggers, some with poor R2 values indicating poor fit.
+
+#Barometric pressure Regression
+Barolm <- lm(cbind(T2_4,T3_1,T3_2,T4_1,T4_2,T4_3,T4_4,T5_1,T5_2,T5_4) ~ Baro_Press , data = Agg_INUND)
+summary(Barolm)
+
+logBarolm <- lm(cbind(logT2_4,logT3_1,logT3_2,logT4_1,logT4_2,logT4_3,logT4_4,logT5_1,logT5_2,logT5_4) ~ Baro_Press , data = logAgg_INUND)
+
+summary(log)
+anova(logBarolm)
+summary(aov(logBarolm))
+#Poor correlation but also poor fit with all loggers
+#but significance for anova of logBarolm, issue with data set violating assumptions?
+#review approach.
+
+
+#Rainfall regression
+Rainlm <- lm(cbind(T2_4,T3_1,T3_2,T4_1,T4_2,T4_3,T4_4,T5_1,T5_2,T5_4) ~ Rainfall , data = Agg_INUND)
+summary(Rainlm)
+
+logRainlm <- lm(cbind(logT2_4,logT3_1,logT3_2,logT4_1,logT4_2,logT4_3,logT4_4,logT5_1,logT5_2,logT5_4) ~ Rainfall , data = logAgg_INUND)
+
+summary(logRainlm)
+#Correlation with 3_1,4_3,5_2 (weak 4_2), poor fit
+
+#Wind regression
+MaxWindlm <- lm(cbind(T2_4,T3_1,T3_2,T4_1,T4_2,T4_3,T4_4,T5_1,T5_2,T5_4) ~ MAX_Wind , data = Agg_INUND)
+summary(MaxWindlm)
+
+logMaxWindlm <- lm(cbind(logT2_4,logT3_1,logT3_2,logT4_1,logT4_2,logT4_3,logT4_4,logT5_1,logT5_2,logT5_4) ~ MAX_Wind , data = logAgg_INUND)
+
+summary(logMaxWindlm)
+
+#*3_2,5_2 (weak 3_1,4_2)
+
+MaxAVWindlm <- lm(cbind(T2_4,T3_1,T3_2,T4_1,T4_2,T4_3,T4_4,T5_1,T5_2,T5_4) ~ MAX_AVGWind , data = Agg_INUND)
+summary(MaxAVWindlm)
+
+logMaxAVWindlm <- lm(cbind(logT2_4,logT3_1,logT3_2,logT4_1,logT4_2,logT4_3,logT4_4,logT5_1,logT5_2,logT5_4) ~ MAX_AVGWind , data = logAgg_INUND)
+summary(logMaxAVWindlm)
+#**3_1
+
+#Multiple Multivariate
+Multilm <- lm(cbind(T2_4,T3_1,T3_2,T4_1,T4_2,T4_3,T4_4,T5_1,T5_2,T5_4) ~ Rainfall + Baro_Press + MAX_Wind + MAX_AVGWind, data = Agg_INUND)
+
+summary(Multilm)
+
+logMultilm <- lm(cbind(logT2_4,logT3_1,logT3_2,logT4_1,logT4_2,logT4_3,logT4_4,logT5_1,logT5_2,logT5_4) ~ Rainfall + Baro_Press + MAX_Wind + MAX_AVGWind, data = logAgg_INUND)
+
+summary(logMultilm)
+
+#Summary: There is a strong correlation between predicted tide and observed inundation height both with or without data transformation to normalize some of the exponential distributions. While there are observed correlations with some loggers and Rainfall, MaxWind and MaxAVGWind, the fit of these regression models are poor as they are far from normally distributed and have a weak linear association.
+
+#MANOVA identifies significance for the same loggers.
+
+#Agg_INUND$Date = as.Date(Agg_INUND$Date, format = "%d/%m/%Y")
+#Agg_INUND$T_Height = as.factor(Agg_INUND$T_Height)
+
+
+#plot of inund loggers
+par(mar=c(5.1,4.1,4.1,10.1), xpd=TRUE)
+plot(as.Date(Agg_INUND$Date,"%d/%m/%Y"),Agg_INUND$T_Height,type = "n", xlab= "Date", ylab= "Height - Above LAT (m)", las = 1, cex = 1.5, ylim=c(1.5,4.0))+
+points(as.Date(Agg_INUND$Date,"%d/%m/%Y"),Agg_INUND$T2_4, type = "l", pch = 20,lwd=1.5, col = "aquamarine4")+
+ points(as.Date(Agg_INUND$Date,"%d/%m/%Y"),Agg_INUND$T3_1, type = "l", pch = 20,lwd=1.5, col = "cadetblue2")+
+  points(as.Date(Agg_INUND$Date,"%d/%m/%Y"),Agg_INUND$T3_2, type = "l", pch = 20,lwd=1.5, col = "cadetblue3")+
+   points(as.Date(Agg_INUND$Date,"%d/%m/%Y"),Agg_INUND$T4_1, type = "l", pch = 20,lwd=1.5, col = "coral1")+
+    points(as.Date(Agg_INUND$Date,"%d/%m/%Y"),Agg_INUND$T4_2, type = "l", pch = 20,lwd=1.5, col = "coral2")+
+     points(as.Date(Agg_INUND$Date,"%d/%m/%Y"),Agg_INUND$T4_3, type = "l", pch = 20,lwd=1.5, col = "coral3")+
+      points(as.Date(Agg_INUND$Date,"%d/%m/%Y"),Agg_INUND$T4_4, type = "l", pch = 20,lwd=1.5, col = "coral4")+
+       points(as.Date(Agg_INUND$Date,"%d/%m/%Y"),Agg_INUND$T5_1, type = "l", pch = 20,lwd=1.5, col = "darkgoldenrod2")+
+        points(as.Date(Agg_INUND$Date,"%d/%m/%Y"),Agg_INUND$T5_2, type = "l", pch = 20,lwd=1.5, col = "darkgoldenrod3")+
+         points(as.Date(Agg_INUND$Date,"%d/%m/%Y"),Agg_INUND$T5_4, type = "l", pch = 20,lwd=1.5, col = "darkgoldenrod4")+
+          points(as.Date(Agg_INUND$Date,"%d/%m/%Y"),Agg_INUND$T_Height, type = "l", pch = 20,lwd=2,lty= 2, col = "grey30")+
+  legend("topright", inset =c(-0.27,0), c("2.4","3.1","3.2", "4.1", "4.2", "4.3", "4.4", "5.1", "5.2","5.4", "Pred. Tide"), col= c("aquamarine4","cadetblue2","cadetblue3","coral1","coral2","coral3","coral4", "darkgoldenrod2", "darkgoldenrod3", "darkgoldenrod4", "grey30"), lwd = c(1.5,1.5,1.5,1.5,1.5,1.5,1.5,1.5,1.5,1.5,2), lty= c(1,1,1,1,1,1,1,1,1,1,2))
+
+Agg_INUND_trim <- Agg_INUND[1:236,]
+
+
+#plot of inund logger w/ rainfall
+par(mar=c(5.1,4.1,4.1,12.1), xpd=TRUE)
+plot(as.Date(Agg_INUND_trim$Date,"%d/%m/%Y"),Agg_INUND_trim$T_Height ,type = "n", xlab= "Date", ylab= "Height - Above LAT (m)", las = 1, cex = 1.5, ylim=c(1.5,4.0))+
+points(as.Date(Agg_INUND_trim$Date,"%d/%m/%Y"),Agg_INUND_trim$T2_4, type = "l", pch = 20,lwd=2, col = "aquamarine4")+
+ points(as.Date(Agg_INUND_trim$Date,"%d/%m/%Y"),Agg_INUND_trim$T3_1, type = "l", pch = 20,lwd=2, col = "cadetblue2")+
+     points(as.Date(Agg_INUND_trim$Date,"%d/%m/%Y"),Agg_INUND_trim$T4_1, type = "l", pch = 20,lwd=2, col = "coral1")+
+    points(as.Date(Agg_INUND_trim$Date,"%d/%m/%Y"),Agg_INUND_trim$T4_2, type = "l", pch = 20,lwd=2, col = "coral2")+
+     points(as.Date(Agg_INUND_trim$Date,"%d/%m/%Y"),Agg_INUND_trim$T4_3, type = "l", pch = 20,lwd=2, col = "coral3")+
+      points(as.Date(Agg_INUND_trim$Date,"%d/%m/%Y"),Agg_INUND_trim$T4_4, type = "l", pch = 20,lwd=2, col = "coral4")+
+               points(as.Date(Agg_INUND_trim$Date,"%d/%m/%Y"),Agg_INUND_trim$T5_2, type = "l", pch = 20,lwd=2, col = "darkgoldenrod3")+
+         points(as.Date(Agg_INUND_trim$Date,"%d/%m/%Y"),Agg_INUND_trim$T5_4, type = "l", pch = 20,lwd=2, col = "darkgoldenrod4")+
+        points(as.Date(Agg_INUND_trim$Date,"%d/%m/%Y"),Agg_INUND_trim$T_Height, type = "l", pch = 20,lwd=2,lty= 2, col = "grey30")+
+            legend("topright", inset =c(-0.4,0), c("2.4","3.1","4.1", "4.2", "4.3", "4.4", "5.2","Pred. Tide", "Rainfall"), col= c("aquamarine4","cadetblue2","coral1","coral2","coral3","coral4", "darkgoldenrod3","grey30", "deepskyblue4"), lwd = c(1.5,1.5,1.5,1.5,1.5,1.5,1.5,2,1.5), lty= c(1,1,1,1,1,1,1,2,2))
+
+par(new = T)
+plot(as.Date(Agg_INUND_trim$Date,"%d/%m/%Y"),Agg_INUND_trim$Rainfall,type = "l" , lwd = 1.5 ,lty = 2,col = "deepskyblue4" , axes = F, xlab = NA, ylab = NA, cex = 1.5, las = 1)+
+  axis(side = 4, las = 1)+
+    mtext (side = 4, line = 2.5, 'Rainfall (mm)')
+
+#plot of inund logger w/ wind
+par(mar=c(5.1,4.1,4.1,14.1), xpd=TRUE)
+plot(as.Date(Agg_INUND_trim$Date,"%d/%m/%Y"),Agg_INUND_trim$MAX_Wind,type = "l" , lwd = 1.5 ,lty = 2,col = "honeydew4" , axes = F, xlab = NA, ylab = NA,ylim=c(0,70), cex = 1.5, las = 1)+
+  axis(side = 4, las = 1)+
+    mtext (side = 4, line = 2.5, 'Wind Speed (km/h)')
+
+par(new = T)
+plot(as.Date(Agg_INUND_trim$Date,"%d/%m/%Y"),Agg_INUND_trim$MAX_AVGWind,type = "l" , lwd = 1.5 ,lty = 2,col = "honeydew3" , axes = F, xlab = NA, ylab = NA, cex = 1.5, las = 1)
+
+par(new = T)
+plot(as.Date(Agg_INUND_trim$Date,"%d/%m/%Y"),Agg_INUND_trim$T_Height ,type = "n", xlab= "Date", ylab= "Height - Above LAT (m)", las = 1, cex = 1.5, ylim=c(1.5,4.0))+
+ points(as.Date(Agg_INUND_trim$Date,"%d/%m/%Y"),Agg_INUND_trim$T3_1, type = "l", pch = 20,lwd=2, col = "cadetblue2")+
+  points(as.Date(Agg_INUND_trim$Date,"%d/%m/%Y"),Agg_INUND_trim$T3_2, type = "l", pch = 20,lwd=2, col = "cadetblue3")+
+   points(as.Date(Agg_INUND_trim$Date,"%d/%m/%Y"),Agg_INUND_trim$T5_2, type = "l", pch = 20,lwd=2, col = "darkgoldenrod3")+
+        points(as.Date(Agg_INUND_trim$Date,"%d/%m/%Y"),Agg_INUND_trim$T_Height, type = "l", pch = 20,lwd=2,lty= 2, col = "grey30")+
+            legend("topright", inset =c(-0.49,0), c("3.1","3.2","5.2","Pred. Tide", "Max Wind", "Max AVG. Wind"), col= c("cadetblue2","cadetblue3", "darkgoldenrod3","grey30", "honeydew4", "honeydew3"), lwd = c(2,2,2,2,1.5,1.5), lty= c(1,1,1,2,2,2))
+
+```
+
+#Direct Well tidal comparison plot
+```{r}
+Tides_Apr16$Date = as.factor(Tides_Apr16$Date)
+
+
+Tide_5APR16 <- Tides_Apr16[1:17,]
+Tide_6APR16 <- Tides_Apr16[18:33,]
+
+inund_5Apr16 <- inund_Apr16[1:23,]
+inund_6Apr16 <- inund_Apr16[24:44,]
+
+
+Tide_5APR16 <- Tide_5APR16 %>%
+  rename(
+    "Height"="Tide prediction (m above LAT)" 
+  )
+
+Tide_6APR16 <- Tide_6APR16 %>%
+  rename(
+    "Height"="Tide prediction (m above LAT)" 
+  )
+
+#plot of direct well comparisons (5th April 2016)
+par(mar=c(5.1,4.1,4.1,10.1), xpd=TRUE)
+plot(strptime(inund_5Apr16$Time, format ="%H:%M:%S"),inund_5Apr16$T4.2,type = "n", xlab= "Date", ylab= "Height - Above LAT (m)", sub= "5th April",font.sub=2, las = 1, cex = 1.5, ylim=c(1.0,3.0))+
+points(strptime(Tide_5APR16$Time, format="%H:%M:%S"),Tide_5APR16$Height, type = "l", pch = 20,lwd=2.5,lty= 2, col = "grey30")+
+ points(strptime(inund_5Apr16$Time,format="%H:%M:%S"),inund_5Apr16$T4.2, type = "l", pch = 20,lwd=2, col = "cadetblue2")+
+  points(strptime(inund_5Apr16$Time,format="%H:%M:%S"),inund_5Apr16$T4.3, type = "l", pch = 20,lwd=2, col = "cadetblue3")+
+   points(strptime(inund_5Apr16$Time,format="%H:%M:%S"),inund_5Apr16$T4.4, type = "l", pch = 20,lwd=2, col = "cadetblue4")+
+    points(strptime(inund_5Apr16$Time,format="%H:%M:%S"),inund_5Apr16$T2.4, type = "l", pch = 20,lwd=2, col = "coral1")+
+     points(strptime(Wells_5Apr16$Time,format="%H:%M:%S"),Wells_5Apr16$Elevation, type = "p", pch = 19, col = "black")+
+  legend("topright", inset =c(-0.266,0), c("Pred. Tide","4.2","4.3", "4.4", "2.4", "Direct Wells"), col= c("grey30","cadetblue2","cadetblue3","cadetblue4","coral1","black"), lwd = c(2.5,2,2,2,2,0), lty= c(2,1,1,1,1,0), pch = c(NA,NA,NA,NA,NA,19))
+
+#plot of direct well comparisons (6th April 2016)
+par(mar=c(5.1,4.1,4.1,10.1), xpd=TRUE)
+plot(strptime(inund_6Apr16$Time, format ="%H:%M:%S"),inund_6Apr16$T4.2,type = "n", xlab= "Time", ylab= "Height - Above LAT (m)", sub= "6th April",font.sub=2, las = 1, cex = 1.5, ylim=c(1.0,3.0))+
+points(strptime(Tide_6APR16$Time, format="%H:%M:%S"),Tide_6APR16$Height, type = "l", pch = 20,lwd=2.5,lty= 2, col = "grey30")+
+ points(strptime(inund_6Apr16$Time,format="%H:%M:%S"),inund_6Apr16$T4.2, type = "l", pch = 20,lwd=2, col = "cadetblue2")+
+  points(strptime(inund_6Apr16$Time,format="%H:%M:%S"),inund_6Apr16$T4.3, type = "l", pch = 20,lwd=2, col = "cadetblue3")+
+   points(strptime(inund_6Apr16$Time,format="%H:%M:%S"),inund_6Apr16$T4.4, type = "l", pch = 20,lwd=2, col = "cadetblue4")+
+    points(strptime(inund_6Apr16$Time,format="%H:%M:%S"),inund_6Apr16$T2.4, type = "l", pch = 20,lwd=2, col = "coral1")+
+     points(strptime(Wells_6Apr16$Time,format="%H:%M:%S"),Wells_6Apr16$Elevation, type = "p", pch = 19, col = "black")+
+  legend("topright", inset =c(-0.266,0), c("Pred. Tide","4.2","4.3", "4.4", "2.4", "Direct Wells"), col= c("grey30","cadetblue2","cadetblue3","cadetblue4","coral1","black"), lwd = c(2.5,2,2,2,2,0), lty= c(2,1,1,1,1,0), pch = c(NA,NA,NA,NA,NA,19))
+
+```
+
+
+#Trialed Inundation Curve - Data sorting 
+```{r}
+#Convert vectors
+inund$Transect = as.factor(inund$Transect)
+inund$Bore_post = as.factor(inund$Bore_post)
+inund$Survey_Date = as.factor(inund$Survey_Date)
+inund$Inund_Month = as.factor(inund$Inund_Month)
+inund$Inund_Date = as.factor(inund$Inund_Date)
+Nest_18Map$Nest_ID= as.character(Nest_18Map$Nest_ID)
+
+str(inund)
+
+#Subset by inudation month/year
+
+Oct17 <- subset(inund, Inund_Month =="Oct-17")
+Nov17 <- subset(inund, Inund_Month =="Nov-17")
+Dec17 <- subset(inund, Inund_Month =="Dec-17")
+Jan18 <- subset(inund, Inund_Month =="Jan-18")
+Feb18 <- subset(inund, Inund_Month =="Feb-18")
+Mar18 <- subset(inund, Inund_Month =="Mar-18")
+Apr18 <- subset(inund, Inund_Month =="Apr-18")
+Oct18 <- subset(inund, Inund_Month =="Oct-18")
+Nov18 <- subset(inund, Inund_Month =="Nov-18")
+Dec18 <- subset(inund, Inund_Month =="Dec-18")
+Jan19 <- subset(inund, Inund_Month =="Jan-19")
+Feb19 <- subset(inund, Inund_Month =="Feb-19")
+Mar19 <- subset(inund, Inund_Month =="Mar-19")
+Apr19 <- subset(inund, Inund_Month =="Apr-19")
+
+Oct17 <- Oct17[order(Oct17$Dist_Berm),]
+Nov17 <- Nov17[order(Nov17$Dist_Berm),]
+Dec17 <- Dec17[order(Dec17$Dist_Berm),]
+Jan18 <- Jan18[order(Jan18$Dist_Berm),]
+Feb18 <- Feb18[order(Feb18$Dist_Berm),]
+Mar18 <- Mar18[order(Mar18$Dist_Berm),]
+Apr18 <- Apr18[order(Apr18$Dist_Berm),]
+Oct18 <- Oct18[order(Oct18$Dist_Berm),]
+Nov18 <- Nov18[order(Nov18$Dist_Berm),]
+Dec18 <- Dec18[order(Dec18$Dist_Berm),]
+Jan19 <- Jan19[order(Jan19$Dist_Berm),]
+Feb19 <- Feb19[order(Feb19$Dist_Berm),]
+Mar19 <- Mar19[order(Mar19$Dist_Berm),]
+Apr19 <- Apr19[order(Apr19$Dist_Berm),]
+
+
+
+```
+
+
+
+
+## Trialed Inundation Curve - Transect Plots
+```{r}
+#Inundation plots by month
+
+#Log regression to produce log line of best fit as estimate of MAX inundation +/- a 95% confidence interval for the whole island for MONTH (Dec,Jan,Apr) fo sampled years with sufficient data points
+
+#Oct17
+log.fit_Oct17 <- lm(Oct17$InundHeight_AbvLAT~log(Oct17$Dist_Berm), data = Oct17)
+summary(log.fit_Oct17)
+pred.Oct17 <- predict(log.fit_Oct17, data= Oct17)
+conf_interval.Oct17 <- predict(log.fit_Oct17, data= Oct17, interval = "confidence", level = 0.95) 
+#R2 = 0.9711, F1,2 =67.22. p = 0.01455
+
+#Save plot
+#jpeg("Oct17_INUND.jpeg", width = 15, height = 12, units = 'cm', res = 300)
+
+#plot
+par(mar=c(5,6,4,2)+0.1)
+plot(Oct17$Dist_Berm,Oct17$InundHeight_AbvLAT, main="Oct 17", type="p", ylim= c(0,4), xlim= c(0,80), yaxs= "i", xaxs= "i", xlab="Dist. from Berm (m)", ylab= "Height Above LAT (m)", las = 1)+
+points(Oct17$Dist_Berm[Oct17$Transect == "2"],Oct17$InundHeight_AbvLAT[Oct17$Transect == "2"] , type = "b", pch = 20, col = "red")+
+ points(Oct17$Dist_Berm[Oct17$Transect == "4"],Oct17$InundHeight_AbvLAT[Oct17$Transect == "4"] , type = "b", pch = 20, col = "blue")+
+ points(Oct17$Dist_Berm[Oct17$Transect == "5"],Oct17$InundHeight_AbvLAT[Oct17$Transect == "5"] , type = "b", pch = 20, col = "green")+
+points(Oct17$Dist_Berm, pred.Oct17, type = "l", pch=20, col = "black", lwd = 2)+
+points(Oct17$Dist_Berm, conf_interval.Oct17[,2], type = "l", col = "grey", lty = 2)+
+points(Oct17$Dist_Berm, conf_interval.Oct17[,3], type = "l", col = "grey", lty = 2)
+  legend(x = "topright", legend=c("Transect 2","Transect 4","Transect 5","Predicted Inundation Curve (+/- 95% CI)"), col=c("red","blue","green","Black"), lty = 1, cex=0.8)
+
+  #dev.off()
+
+#################################
+#Nov17
+log.fit_Nov17 <- lm(Nov17$InundHeight_AbvLAT~log(Nov17$Dist_Berm), data = Nov17)
+summary(log.fit_Nov17)
+pred.Nov17 <- predict(log.fit_Nov17, data= Nov17)
+conf_interval.Nov17 <- predict(log.fit_Nov17, data= Nov17, interval = "confidence", level = 0.95) 
+#R2 = 0.8871, F1,7 =54.99. p = 0.0001475
+
+#Save plot
+#jpeg("Nov17_INUND.jpeg", width = 15, height = 12, units = 'cm', res = 300)
+
+#plot
+par(mar=c(5,6,4,2)+0.1)
+plot(Nov17$Dist_Berm,Nov17$InundHeight_AbvLAT, main="Nov 17", type="p", ylim= c(0,4), xlim= c(0,80), yaxs= "i", xaxs= "i", xlab="Dist. from Berm (m)", ylab= "Height Above LAT (m)", las = 1)+
+points(Nov17$Dist_Berm[Nov17$Transect == "2"],Nov17$InundHeight_AbvLAT[Nov17$Transect == "2"] , type = "b", pch = 20, col = "red")+
+ points(Nov17$Dist_Berm[Nov17$Transect == "4"],Nov17$InundHeight_AbvLAT[Nov17$Transect == "4"] , type = "b", pch = 20, col = "blue")+
+ points(Nov17$Dist_Berm[Nov17$Transect == "5"],Nov17$InundHeight_AbvLAT[Nov17$Transect == "5"] , type = "b", pch = 20, col = "green")+
+points(Nov17$Dist_Berm, pred.Nov17, type = "l", pch=20, col = "black", lwd = 2)+
+points(Nov17$Dist_Berm, conf_interval.Nov17[,2], type = "l", col = "grey", lty = 2)+
+points(Nov17$Dist_Berm, conf_interval.Nov17[,3], type = "l", col = "grey", lty = 2)
+  legend(x = "topright", legend=c("Transect 2","Transect 4","Transect 5","Predicted Inundation Curve (+/- 95% CI)"), col=c("red","blue","green","Black"), lty = 1, cex=0.8)
+
+  #dev.off()
+  
+###############################
+#Dec17
+log.fit_Dec17 <- lm(Dec17$InundHeight_AbvLAT~log(Dec17$Dist_Berm), data = Dec17)
+summary(log.fit_Dec17)
+pred.Dec17 <- predict(log.fit_Dec17, data= Dec17)
+conf_interval.Dec17 <- predict(log.fit_Dec17, data= Dec17, interval = "confidence", level = 0.95) 
+#R2 = 0.7971, F1,4 =15.71. p = 0.01662
+
+#Save plot
+#jpeg("DEC17_INUND.jpeg", width = 15, height = 12, units = 'cm', res = 300)
+
+#plot
+par(mar=c(5,6,4,2)+0.1)
+plot(Dec17$Dist_Berm,Dec17$InundHeight_AbvLAT, main="Dec 17", type="p", ylim= c(0,4), xlim= c(0,80), yaxs= "i", xaxs= "i", xlab="Dist. from Berm (m)", ylab= "Height Above LAT (m)", las = 1)+
+points(Dec17$Dist_Berm[Dec17$Transect == "2"],Dec17$InundHeight_AbvLAT[Dec17$Transect == "2"] , type = "b", pch = 20, col = "red")+
+ points(Dec17$Dist_Berm[Dec17$Transect == "4"],Dec17$InundHeight_AbvLAT[Dec17$Transect == "4"] , type = "b", pch = 20, col = "blue")+
+ points(Dec17$Dist_Berm[Dec17$Transect == "5"],Dec17$InundHeight_AbvLAT[Dec17$Transect == "5"] , type = "b", pch = 20, col = "green")+
+points(Dec17$Dist_Berm, pred.Dec17, type = "l", pch=20, col = "black", lwd = 2)+
+points(Dec17$Dist_Berm, conf_interval.Dec17[,2], type = "l", col = "grey", lty = 2)+
+points(Dec17$Dist_Berm, conf_interval.Dec17[,3], type = "l", col = "grey", lty = 2)
+  legend(x = "topright", legend=c("Transect 2","Transect 4","Transect 5","Predicted Inundation Curve (+/- 95% CI)"), col=c("red","blue","green","Black"), lty = 1, cex=0.8)
+
+  #dev.off()
+#################################
+#Jan18
+log.fit_Jan18 <- lm(Jan18$InundHeight_AbvLAT~log(Jan18$Dist_Berm), data = Jan18)
+summary(log.fit_Jan18)
+pred.Jan18 <- predict(log.fit_Jan18, data= Jan18)
+conf_interval.Jan18 <- predict(log.fit_Jan18, data= Jan18, interval = "confidence", level = 0.95) 
+#R2 = 0.4453, F1,9 =7.225, p = 0.02488
+##Poor fit but best estimate available from data points
+
+#Save plot
+#jpeg("JAN18_INUND.jpeg", width = 15, height = 12, units = 'cm', res = 300)
+
+#plot
+par(mar=c(5,6,4,2)+0.1)
+plot(Jan18$Dist_Berm,Jan18$InundHeight_AbvLAT, main="Jan 18",type="p", ylim= c(0,4), xlim= c(0,80), yaxs= "i", xaxs= "i", xlab="Dist. from Berm (m)", ylab= "Height Above LAT (m)", las = 1)+
+points(Jan18$Dist_Berm[Jan18$Transect == "2"],Jan18$InundHeight_AbvLAT[Jan18$Transect == "2"] , type = "b", pch = 20, col = "red")+
+ points(Jan18$Dist_Berm[Jan18$Transect == "3"],Jan18$InundHeight_AbvLAT[Jan18$Transect == "3"] , type = "b", pch = 20, col = "orange")+
+ points(Jan18$Dist_Berm[Jan18$Transect == "4"],Jan18$InundHeight_AbvLAT[Jan18$Transect == "4"] , type = "b", pch = 20, col = "blue")+
+ points(Jan18$Dist_Berm[Jan18$Transect == "5"],Jan18$InundHeight_AbvLAT[Jan18$Transect == "5"] , type = "b", pch = 20, col = "green")+
+points(Jan18$Dist_Berm, pred.Jan18, type = "l", pch=20, col = "black", lwd = 2)+
+points(Jan18$Dist_Berm, conf_interval.Jan18[,2], type = "l", col = "grey", lty = 2)
+points(Jan18$Dist_Berm, conf_interval.Jan18[,3], type = "l", col = "grey", lty = 2)
+  legend(x = "bottomright", legend=c("Transect 2", "Transect 3","Transect 4","Transect 5","Predicted Inundation Curve (+/- 95% CI)"), col=c("red","orange","blue","green","Black"), lty = 1, cex=0.8)
+
+  #dev.off()
+##############################
+#Feb18
+log.fit_Feb18 <- lm(Feb18$InundHeight_AbvLAT~log(Feb18$Dist_Berm), data = Feb18)
+summary(log.fit_Feb18)
+pred.Feb18 <- predict(log.fit_Feb18, data= Feb18)
+conf_interval.Feb18 <- predict(log.fit_Feb18, data= Feb18, interval = "confidence", level = 0.95) 
+#R2 = 0.5062, F1,9 =9.226, p = 0.01408
+
+#Save plot
+#jpeg("Feb18_INUND.jpeg", width = 15, height = 12, units = 'cm', res = 300)
+
+#plot
+par(mar=c(5,6,4,2)+0.1)
+plot(Feb18$Dist_Berm,Feb18$InundHeight_AbvLAT, main="Feb 18", type="p", ylim= c(0,4), xlim= c(0,80), yaxs= "i", xaxs= "i", xlab="Dist. from Berm (m)", ylab= "Height Above LAT (m)", las = 1)+
+points(Feb18$Dist_Berm[Feb18$Transect == "2"],Feb18$InundHeight_AbvLAT[Feb18$Transect == "2"] , type = "b", pch = 20, col = "red")+
+ points(Feb18$Dist_Berm[Feb18$Transect == "3"],Feb18$InundHeight_AbvLAT[Feb18$Transect == "3"] , type = "b", pch = 20, col = "orange")+
+ points(Feb18$Dist_Berm[Feb18$Transect == "4"],Feb18$InundHeight_AbvLAT[Feb18$Transect == "4"] , type = "b", pch = 20, col = "blue")+
+ points(Feb18$Dist_Berm[Feb18$Transect == "5"],Feb18$InundHeight_AbvLAT[Feb18$Transect == "5"] , type = "b", pch = 20, col = "green")+
+points(Feb18$Dist_Berm, pred.Feb18, type = "l", pch=20, col = "black", lwd = 2)+
+points(Feb18$Dist_Berm, conf_interval.Feb18[,2], type = "l", col = "grey", lty = 2)
+points(Feb18$Dist_Berm, conf_interval.Feb18[,3], type = "l", col = "grey", lty = 2)
+  legend(x = "bottomright", legend=c("Transect 2", "Transect 3","Transect 4","Transect 5","Predicted Inundation Curve (+/- 95% CI)"), col=c("red","orange","blue","green","Black"), lty = 1, cex=0.8)
+
+#dev.off()
+
+##############################
+#Mar18
+log.fit_Mar18 <- lm(Mar18$InundHeight_AbvLAT~log(Mar18$Dist_Berm), data = Mar18)
+summary(log.fit_Mar18)
+pred.Mar18 <- predict(log.fit_Mar18, data= Mar18)
+conf_interval.Mar18 <- predict(log.fit_Mar18, data= Mar18, interval = "confidence", level = 0.95) 
+#R2 = 0.7644, F1,9 =29.2, p = 0.000431
+
+#Save plot
+#jpeg("Mar18_INUND.jpeg", width = 15, height = 12, units = 'cm', res = 300)
+
+#plot
+par(mar=c(5,6,4,2)+0.1)
+plot(Mar18$Dist_Berm,Mar18$InundHeight_AbvLAT, main="Mar 18", type="p", ylim= c(0,4), xlim= c(0,80), yaxs= "i", xaxs= "i", xlab="Dist. from Berm (m)", ylab= "Height Above LAT (m)", las = 1)+
+points(Mar18$Dist_Berm[Mar18$Transect == "2"],Mar18$InundHeight_AbvLAT[Mar18$Transect == "2"] , type = "b", pch = 20, col = "red")+
+ points(Mar18$Dist_Berm[Mar18$Transect == "3"],Mar18$InundHeight_AbvLAT[Mar18$Transect == "3"] , type = "b", pch = 20, col = "orange")+
+ points(Mar18$Dist_Berm[Mar18$Transect == "4"],Mar18$InundHeight_AbvLAT[Mar18$Transect == "4"] , type = "b", pch = 20, col = "blue")+
+ points(Mar18$Dist_Berm[Mar18$Transect == "5"],Mar18$InundHeight_AbvLAT[Mar18$Transect == "5"] , type = "b", pch = 20, col = "green")+
+points(Mar18$Dist_Berm, pred.Mar18, type = "l", pch=20, col = "black", lwd = 2)+
+points(Mar18$Dist_Berm, conf_interval.Mar18[,2], type = "l", col = "grey", lty = 2)
+points(Mar18$Dist_Berm, conf_interval.Mar18[,3], type = "l", col = "grey", lty = 2)
+  legend(x = "bottomright", legend=c("Transect 2", "Transect 3","Transect 4","Transect 5","Predicted Inundation Curve (+/- 95% CI)"), col=c("red","orange","blue","green","Black"), lty = 1, cex=0.8)
+
+#dev.off()
+
+##############################
+#Apr18
+log.fit_Apr18 <- lm(Apr18$InundHeight_AbvLAT~log(Apr18$Dist_Berm), data = Apr18)
+summary(log.fit_Apr18)
+pred.Apr18 <- predict(log.fit_Apr18, data= Apr18)
+conf_interval.Apr18 <- predict(log.fit_Apr18, data= Apr18, interval = "confidence", level = 0.95) 
+#R2 = 0.4579, F1,9 =7.604. p = 0.0222
+
+#Save plot
+#jpeg("Apr18_INUND.jpeg", width = 15, height = 12, units = 'cm', res = 300)
+
+#plot
+par(mar=c(5,6,4,2)+0.1)
+plot(Apr18$Dist_Berm,Apr18$InundHeight_AbvLAT, main="Apr 18", type="p", ylim= c(0,4), xlim= c(0,80), yaxs= "i", xaxs= "i", xlab="Dist. from Berm (m)", ylab= "Height Above LAT (m)", las = 1)+
+points(Apr18$Dist_Berm[Apr18$Transect == "2"],Apr18$InundHeight_AbvLAT[Apr18$Transect == "2"] , type = "b", pch = 20, col = "red")+
+ points(Apr18$Dist_Berm[Apr18$Transect == "3"],Apr18$InundHeight_AbvLAT[Apr18$Transect == "3"] , type = "b", pch = 20, col = "orange")+
+ points(Apr18$Dist_Berm[Apr18$Transect == "4"],Apr18$InundHeight_AbvLAT[Apr18$Transect == "4"] , type = "b", pch = 20, col = "blue")+
+ points(Apr18$Dist_Berm[Apr18$Transect == "5"],Apr18$InundHeight_AbvLAT[Apr18$Transect == "5"] , type = "b", pch = 20, col = "green")+
+points(Apr18$Dist_Berm, pred.Apr18, type = "l", pch=20, col = "black", lwd = 2)+
+points(Apr18$Dist_Berm, conf_interval.Apr18[,2], type = "l", col = "grey", lty = 2)
+points(Apr18$Dist_Berm, conf_interval.Apr18[,3], type = "l", col = "grey", lty = 2)
+  legend(x = "bottomright", legend=c("Transect 2", "Transect 3","Transect 4","Transect 5","Predicted Inundation Curve (+/- 95% CI)"), col=c("red","orange","blue","green","Black"), lty = 1, cex=0.8)
+
+#dev.off()
+
+##############################
+  
+  
+#Oct18
+log.fit_Oct18 <- lm(Oct18$InundHeight_AbvLAT~log(Oct18$Dist_Berm), data = Oct18)
+summary(log.fit_Oct18)
+pred.Oct18 <- predict(log.fit_Oct18, data= Oct18)
+conf_interval.Oct18 <- predict(log.fit_Oct18, data= Oct18, interval = "confidence", level = 0.95) 
+#R2 = 0.5118, F1,8 =8.386, p = 0.02002
+
+#Save plot
+#jpeg("Oct18_INUND.jpeg", width = 15, height = 12, units = 'cm', res = 300)
+
+#plot
+par(mar=c(5,6,4,2)+0.1)
+plot(Oct18$Dist_Berm,Oct18$InundHeight_AbvLAT, main="Oct 18", type="p", ylim= c(0,4), xlim= c(0,80), yaxs= "i", xaxs= "i", xlab="Dist. from Berm (m)", ylab= "Height Above LAT (m)", las = 1)+
+points(Oct18$Dist_Berm[Oct18$Transect == "2"],Oct18$InundHeight_AbvLAT[Oct18$Transect == "2"] , type = "b", pch = 20, col = "red")+
+ points(Oct18$Dist_Berm[Oct18$Transect == "3"],Oct18$InundHeight_AbvLAT[Oct18$Transect == "3"] , type = "b", pch = 20, col = "orange")+
+ points(Oct18$Dist_Berm[Oct18$Transect == "4"],Oct18$InundHeight_AbvLAT[Oct18$Transect == "4"] , type = "b", pch = 20, col = "blue")+
+ points(Oct18$Dist_Berm[Oct18$Transect == "5"],Oct18$InundHeight_AbvLAT[Oct18$Transect == "5"] , type = "b", pch = 20, col = "green")+
+points(Oct18$Dist_Berm, pred.Oct18, type = "l", pch=20, col = "black", lwd = 2)+
+points(Oct18$Dist_Berm, conf_interval.Oct18[,2], type = "l", col = "grey", lty = 2)
+points(Oct18$Dist_Berm, conf_interval.Oct18[,3], type = "l", col = "grey", lty = 2)
+  legend(x = "topright", legend=c("Transect 3","Transect 4","Transect 5","Predicted Inundation Curve (+/- 95% CI)"), col=c("orange","blue","green","Black"), lty = 1, cex=0.8)
+
+#dev.off()
+
+##############################
+  
+  
+#Nov18
+log.fit_Nov18 <- lm(Nov18$InundHeight_AbvLAT~log(Nov18$Dist_Berm), data = Nov18)
+summary(log.fit_Nov18)
+pred.Nov18 <- predict(log.fit_Nov18, data= Nov18)
+conf_interval.Nov18 <- predict(log.fit_Nov18, data= Nov18, interval = "confidence", level = 0.95) 
+#R2 = 0.603, F1,8 =15.71. p = 0.00825
+
+#Save plot
+#jpeg("Nov18_INUND.jpeg", width = 15, height = 12, units = 'cm', res = 300)
+
+#plot
+par(mar=c(5,6,4,2)+0.1)
+plot(Nov18$Dist_Berm,Nov18$InundHeight_AbvLAT, main="Nov 18", type="p", ylim= c(0,4), xlim= c(0,80), yaxs= "i", xaxs= "i", xlab="Dist. from Berm (m)", ylab= "Height Above LAT (m)", las = 1)+
+points(Nov18$Dist_Berm[Nov18$Transect == "2"],Nov18$InundHeight_AbvLAT[Nov18$Transect == "2"] , type = "b", pch = 20, col = "red")+
+ points(Nov18$Dist_Berm[Nov18$Transect == "3"],Nov18$InundHeight_AbvLAT[Nov18$Transect == "3"] , type = "b", pch = 20, col = "orange")+
+ points(Nov18$Dist_Berm[Nov18$Transect == "4"],Nov18$InundHeight_AbvLAT[Nov18$Transect == "4"] , type = "b", pch = 20, col = "blue")+
+ points(Nov18$Dist_Berm[Nov18$Transect == "5"],Nov18$InundHeight_AbvLAT[Nov18$Transect == "5"] , type = "b", pch = 20, col = "green")+
+points(Nov18$Dist_Berm, pred.Nov18, type = "l", pch=20, col = "black", lwd = 2)+
+points(Nov18$Dist_Berm, conf_interval.Nov18[,2], type = "l", col = "grey", lty = 2)
+points(Nov18$Dist_Berm, conf_interval.Nov18[,3], type = "l", col = "grey", lty = 2)
+  legend(x = "topright", legend=c("Transect 3","Transect 4","Transect 5","Predicted Inundation Curve (+/- 95% CI)"), col=c("orange","blue","green","Black"), lty = 1, cex=0.8)
+
+#dev.off()
+
+###############################
+  
+  
+#Dec18
+log.fit_Dec18 <- lm(Dec18$InundHeight_AbvLAT~log(Dec18$Dist_Berm), data = Dec18)
+summary(log.fit_Dec18)
+pred.Dec18 <- predict(log.fit_Dec18, data= Dec18)
+conf_interval.Dec18 <- predict(log.fit_Dec18, data= Dec18, interval = "confidence", level = 0.95) 
+#R2 = 0.7153, F1,6 =15.07, p = 0.008147
+
+
+#Save plot
+#jpeg("DEC18_INUND.jpeg", width = 15, height = 12, units = 'cm', res = 300)
+
+#plot
+par(mar=c(5,6,4,2)+0.1)
+plot(Dec18$Dist_Berm,Dec18$InundHeight_AbvLAT, main="Dec 18", type="p", ylim= c(0,4), xlim= c(0,80), yaxs= "i", xaxs= "i", xlab="Dist. from Berm (m)", ylab= "Height Above LAT (m)", las = 1)+
+points(Dec18$Dist_Berm[Dec18$Transect == "2"],Dec18$InundHeight_AbvLAT[Dec18$Transect == "2"] , type = "b", pch = 20, col = "red")+
+ points(Dec18$Dist_Berm[Dec18$Transect == "3"],Dec18$InundHeight_AbvLAT[Dec18$Transect == "3"] , type = "b", pch = 20, col = "orange")+
+ points(Dec18$Dist_Berm[Dec18$Transect == "4"],Dec18$InundHeight_AbvLAT[Dec18$Transect == "4"] , type = "b", pch = 20, col = "blue")+
+ points(Dec18$Dist_Berm[Dec18$Transect == "5"],Dec18$InundHeight_AbvLAT[Dec18$Transect == "5"] , type = "b", pch = 20, col = "green")+
+points(Dec18$Dist_Berm, pred.Dec18, type = "l", pch=20, col = "black", lwd = 2)+
+points(Dec18$Dist_Berm, conf_interval.Dec18[,2], type = "l", col = "grey", lty = 2)
+points(Dec18$Dist_Berm, conf_interval.Dec18[,3], type = "l", col = "grey", lty = 2)
+  legend(x = "topright", legend=c("Transect 3","Transect 4","Transect 5","Predicted Inundation Curve (+/- 95% CI)"), col=c("orange","blue","green","Black"), lty = 1, cex=0.8)
+
+#dev.off()
+
+###############################
+#Jan19
+log.fit_Jan19 <- lm(Jan19$InundHeight_AbvLAT~log(Jan19$Dist_Berm), data = Jan19)
+summary(log.fit_Jan19)
+pred.Jan19 <- predict(log.fit_Jan19, data= Jan19)
+conf_interval.Jan19 <- predict(log.fit_Jan19, data= Jan19, interval = "confidence", level = 0.95) 
+#R2 = 0.9569, F1,6 =133.3, p = 2.539e-05
+
+
+#Save plot
+#jpeg("JAN19_INUND.jpeg", width = 15, height = 12, units = 'cm', res = 300)
+
+#plot
+par(mar=c(5,6,4,2)+0.1)
+plot(Jan19$Dist_Berm,Jan19$InundHeight_AbvLAT, main="Jan 19", type="p", ylim= c(0,4), xlim= c(0,80), yaxs= "i", xaxs= "i", xlab="Dist. from Berm (m)", ylab= "Height Above LAT (m)", las = 1)+
+points(Jan19$Dist_Berm[Jan19$Transect == "2"],Jan19$InundHeight_AbvLAT[Jan19$Transect == "2"] , type = "b", pch = 20, col = "red")+
+ points(Jan19$Dist_Berm[Jan19$Transect == "3"],Jan19$InundHeight_AbvLAT[Jan19$Transect == "3"] , type = "b", pch = 20, col = "orange")+
+ points(Jan19$Dist_Berm[Jan19$Transect == "4"],Jan19$InundHeight_AbvLAT[Jan19$Transect == "4"] , type = "b", pch = 20, col = "blue")+
+ points(Jan19$Dist_Berm[Jan19$Transect == "5"],Jan19$InundHeight_AbvLAT[Jan19$Transect == "5"] , type = "b", pch = 20, col = "green")+
+points(Jan19$Dist_Berm, pred.Jan19, type = "l", pch=20, col = "black", lwd = 2)+
+points(Jan19$Dist_Berm, conf_interval.Jan19[,2], type = "l", col = "grey", lty = 2)
+points(Jan19$Dist_Berm, conf_interval.Jan19[,3], type = "l", col = "grey", lty = 2)
+  legend(x = "topright", legend=c("Transect 3","Transect 4","Transect 5","Predicted Inundation Curve (+/- 95% CI)"), col=c("orange","blue","green","Black"), lty = 1, cex=0.8)
+
+#dev.off()
+
+################################
+#Feb19
+log.fit_Feb19 <- lm(Feb19$InundHeight_AbvLAT~log(Feb19$Dist_Berm), data = Feb19)
+summary(log.fit_Feb19)
+pred.Feb19 <- predict(log.fit_Feb19, data= Feb19)
+conf_interval.Feb19 <- predict(log.fit_Feb19, data= Feb19, interval = "confidence", level = 0.95) 
+#R2 = 0.6278, F1,5 =8.435, p = 0.03362
+
+#Save plot
+#jpeg("Feb19_INUND.jpeg", width = 15, height = 12, units = 'cm', res = 300)
+
+#plot
+par(mar=c(5,6,4,2)+0.1)
+plot(Feb19$Dist_Berm,Feb19$InundHeight_AbvLAT, main="Feb 19", type="p", ylim= c(0,4), xlim= c(0,80), yaxs= "i", xaxs= "i", xlab="Dist. from Berm (m)", ylab= "Height Above LAT (m)", las = 1)+
+points(Feb19$Dist_Berm[Feb19$Transect == "2"],Feb19$InundHeight_AbvLAT[Feb19$Transect == "2"] , type = "b", pch = 20, col = "red")+
+ points(Feb19$Dist_Berm[Feb19$Transect == "3"],Feb19$InundHeight_AbvLAT[Feb19$Transect == "3"] , type = "b", pch = 20, col = "orange")+
+ points(Feb19$Dist_Berm[Feb19$Transect == "4"],Feb19$InundHeight_AbvLAT[Feb19$Transect == "4"] , type = "b", pch = 20, col = "blue")+
+ points(Feb19$Dist_Berm[Feb19$Transect == "5"],Feb19$InundHeight_AbvLAT[Feb19$Transect == "5"] , type = "b", pch = 20, col = "green")+
+points(Feb19$Dist_Berm, pred.Feb19, type = "l", pch=20, col = "black", lwd = 2)+
+points(Feb19$Dist_Berm, conf_interval.Feb19[,2], type = "l", col = "grey", lty = 2)
+points(Feb19$Dist_Berm, conf_interval.Feb19[,3], type = "l", col = "grey", lty = 2)
+  legend(x = "bottomright", legend=c("Transect 3","Transect 4","Transect 5","Predicted Inundation Curve (+/- 95% CI)"), col=c("orange","blue","green","Black"), lty = 1, cex=0.8)
+
+  #dev.off()
+  
+################################
+#Mar19
+log.fit_Mar19 <- lm(Mar19$InundHeight_AbvLAT~log(Mar19$Dist_Berm), data = Mar19)
+summary(log.fit_Mar19)
+pred.Mar19 <- predict(log.fit_Mar19, data= Mar19)
+conf_interval.Mar19 <- predict(log.fit_Mar19, data= Mar19, interval = "confidence", level = 0.95) 
+#R2 = 0.06025, F1,5 =0.3206. p = 0.5957
+
+#Save plot
+#jpeg("Mar19_INUND.jpeg", width = 15, height = 12, units = 'cm', res = 300)
+
+#plot
+par(mar=c(5,6,4,2)+0.1)
+plot(Mar19$Dist_Berm,Mar19$InundHeight_AbvLAT, main="Mar 19", type="p", ylim= c(0,4), xlim= c(0,80), yaxs= "i", xaxs= "i", xlab="Dist. from Berm (m)", ylab= "Height Above LAT (m)", las = 1)+
+points(Mar19$Dist_Berm[Mar19$Transect == "2"],Mar19$InundHeight_AbvLAT[Mar19$Transect == "2"] , type = "b", pch = 20, col = "red")+
+ points(Mar19$Dist_Berm[Mar19$Transect == "3"],Mar19$InundHeight_AbvLAT[Mar19$Transect == "3"] , type = "b", pch = 20, col = "orange")+
+ points(Mar19$Dist_Berm[Mar19$Transect == "4"],Mar19$InundHeight_AbvLAT[Mar19$Transect == "4"] , type = "b", pch = 20, col = "blue")+
+ points(Mar19$Dist_Berm[Mar19$Transect == "5"],Mar19$InundHeight_AbvLAT[Mar19$Transect == "5"] , type = "b", pch = 20, col = "green")+
+points(Mar19$Dist_Berm, pred.Mar19, type = "l", pch=20, col = "black", lwd = 2)+
+points(Mar19$Dist_Berm, conf_interval.Mar19[,2], type = "l", col = "grey", lty = 2)
+points(Mar19$Dist_Berm, conf_interval.Mar19[,3], type = "l", col = "grey", lty = 2)
+  legend(x = "bottomright", legend=c("Transect 3","Transect 4","Transect 5","Predicted Inundation Curve (+/- 95% CI)"), col=c("orange","blue","green","Black"), lty = 1, cex=0.8)
+
+  #dev.off()
+  
+################################
+#Apr19
+log.fit_Apr19 <- lm(Apr19$InundHeight_AbvLAT~log(Apr19$Dist_Berm), data = Apr19)
+summary(log.fit_Apr19)
+pred.Apr19 <- predict(log.fit_Apr19, data= Apr19)
+conf_interval.Apr19 <- predict(log.fit_Apr19, data= Apr19, interval = "confidence", level = 0.95) 
+#R2 = 0.3148, F1,7 =3.216. p = 0.116
+
+#Save plot
+#jpeg("Apr19_INUND.jpeg", width = 15, height = 12, units = 'cm', res = 300)
+
+#plot
+par(mar=c(5,6,4,2)+0.1)
+plot(Apr19$Dist_Berm,Apr19$InundHeight_AbvLAT, main="Apr 19", type="p", ylim= c(0,4), xlim= c(0,80), yaxs= "i", xaxs= "i", xlab="Dist. from Berm (m)", ylab= "Height Above LAT (m)", las = 1)+
+points(Apr19$Dist_Berm[Apr19$Transect == "2"],Apr19$InundHeight_AbvLAT[Apr19$Transect == "2"] , type = "b", pch = 20, col = "red")+
+ points(Apr19$Dist_Berm[Apr19$Transect == "3"],Apr19$InundHeight_AbvLAT[Apr19$Transect == "3"] , type = "b", pch = 20, col = "orange")+
+ points(Apr19$Dist_Berm[Apr19$Transect == "4"],Apr19$InundHeight_AbvLAT[Apr19$Transect == "4"] , type = "b", pch = 20, col = "blue")+
+ points(Apr19$Dist_Berm[Apr19$Transect == "5"],Apr19$InundHeight_AbvLAT[Apr19$Transect == "5"] , type = "b", pch = 20, col = "green")+
+points(Apr19$Dist_Berm, pred.Apr19, type = "l", pch=20, col = "black", lwd = 2)+
+points(Apr19$Dist_Berm, conf_interval.Apr19[,2], type = "l", col = "grey", lty = 2)
+points(Apr19$Dist_Berm, conf_interval.Apr19[,3], type = "l", col = "grey", lty = 2)
+  legend(x = "bottomright", legend=c("Transect 3","Transect 4","Transect 5","Predicted Inundation Curve (+/- 95% CI)"), col=c("orange","blue","green","Black"), lty = 1, cex=0.8)
+
+  #dev.off()
+```
+
+
+## Plot Marked nests against monthly inundation curves and identify nests likely to have experienced inundation
+```{r}
+#####################
+# 2018 Nests
+
+#Save plot
+#jpeg("Nests_2018.jpeg", width = 20, height = 15, units = 'cm', res = 300)
+
+#Transect 5 Elevation Dec 2018
+BermDist <- c(0.8345,14.4587,39.6624,53.1972)
+Elev <- c(3.9057,3.8565,3.6823,3.5089)
+
+Tran5.2018 <- data.frame(BermDist,Elev)
+
+#plot
+par(mar=c(5,6,4,2)+0.1)
+plot(Nest_18Map$BermDist_m,Nest_18Map$Nest_Elevation, main="2018 Marked Nests", type="p", ylim= c(1,5), xlim= c(0,60), yaxs= "i", xaxs= "i", xlab="Dist. from Berm (m)", ylab= "Height Above LAT (m)", las = 1)+
+#Nov 18 predicted inundation
+  #points(Nov18$Dist_Berm, pred.Nov18, type = "l", pch=20, col = "orange", lwd = 2)+
+#points(Nov18$Dist_Berm, conf_interval.Nov18[,2], type = "l", col = "grey", lty = 2)+
+#points(Nov18$Dist_Berm, conf_interval.Nov18[,3], type = "l", col = "grey", lty = 2)+
+#Dec 18 predicted inundation
+  points(Dec18$Dist_Berm, pred.Dec18, type = "l", pch=20, col = "orange", lwd = 2)+
+points(Dec18$Dist_Berm, conf_interval.Dec18[,2], type = "l", col = "grey", lty = 2)+
+points(Dec18$Dist_Berm, conf_interval.Dec18[,3], type = "l", col = "grey", lty = 2)+
+#Jan 19 predicted inundation  
+points(Jan19$Dist_Berm, pred.Jan19, type = "l", pch=20, col = "red", lwd = 2)+
+points(Jan19$Dist_Berm, conf_interval.Jan19[,2], type = "l", col = "grey", lty = 2)+
+points(Jan19$Dist_Berm, conf_interval.Jan19[,3], type = "l", col = "grey", lty = 2)+
+#Feb 18 predicted inundation
+  #points(Feb18$Dist_Berm, pred.Feb18, type = "l", pch=20, col = "orange", lwd = 2)+
+#points(Feb18$Dist_Berm, conf_interval.Feb18[,2], type = "l", col = "grey", lty = 2)+
+#points(Feb18$Dist_Berm, conf_interval.Feb18[,3], type = "l", col = "grey", lty = 2)+
+#Add in Transect 5 Elevation
+   points(Tran5.2018$BermDist,Tran5.2018$Elev , type = "l", pch = 20, lwd = 2, col = "green")+
+#Add in nest locations
+points(Nest_18Map$BermDist_m,Nest_18Map$Nest_Elevation , type = "p", pch = 20, col = "blue")+
+text(Nest_18Map$BermDist_m,Nest_18Map$Nest_Elevation,  labels = Nest_18Map$Nest_ID, pos = 4, cex=0.5, font = 2)
+#Add in inundated nests locations
+points(Nest_18INUND$BermDist_m,Nest_18INUND$Nest_Elevation , type = "p", pch = 20, col = "red")+
+text(Nest_18INUND$BermDist_m,Nest_18INUND$Nest_Elevation,  labels = Nest_18INUND$Nest_ID, pos = 4, cex=0.5, font = 2)
+#Legend 
+ legend(x = "topright", legend=c("Nest locations","Inundated Nests","Beach Elevation","Dec 18 MAX Inundation (+/- 95% CI)","Jan 19 MAX Inundation(+/- 95% CI)"), col=c("blue","red","green","orange","red"), lty = c(0,0,1,1,1),lwd = c(0,0,1,1,1), pch = c(20,20,NA,NA,NA), pt.cex = 1,cex=0.9)
+
+
+#dev.off()
+
+
+
+Inundated.nests2018 <- filter(Nest_18Map, Nest_18Map$Nest_Elevation  <  conf_interval.Jan19[,3] & Nest_18Map$BermDist_m >= Jan19$Dist_Berm)
+
+```
+
+
+# Mapping Nests - review R packages to find best methods...
+```{r}
+
+str(Nest_18Map)
+RainePoints <- Nest_18Map[61:1579,2:4]
+Nests.2018 <- Nest_18Map[1:60, 2:4]
+
+
+
+
+RainePoints <- as.data.frame(RainePoints)
+RainePoints$Nest_Easting <- as.vector(RainePoints$Nest_Easting)
+RainePoints$Nest_Northing <- as.vector(RainePoints$Nest_Northing)
+RainePoints$Nest_Elevation <- as.vector(RainePoints$Nest_Elevation)
+
+RainePoints <- df.reindex(columns='Easting', 'Elevation', 'Northing')
+
+plot3D(Nests.2018, smooth=TRUE, type= "c")
+
+library(marmap);
+library(lattice);
+data(nw.atlantic);
+atl<-nw.atlantic;
+atl<-as.bathy(atl);
+wireframe(unclass(atl),shade=T,aspect=c(1/2,0.1),
+          xlab="",ylab="",zlab="");
+
+
+data(RainePoints);
+Raine.P<-RainePoints;
+Raine.P1<-as.bathy(Raine.P);
+wireframe(unclass(Raine.P1),shade=T,aspect=c(1/2,0.1),
+          xlab="",ylab="",zlab="",scales=list(draw=F,arrows=FALSE))
+
+
+```
+
