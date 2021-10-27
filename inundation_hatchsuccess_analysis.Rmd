@@ -345,8 +345,10 @@ How about zero_inund data:
 Throw in all variables
 
 ```{r, echo=FALSE, results='hide'}
-zero.inund %>% select(Nest_Elevation, Berm_Dist, Season, Sector, Northings, Eastings,
-                      Hatched, Live_hatchlings, Total_clutch, prop_success) %>%
+zero.inund %>% select(Nest_Elevation, Berm_Dist, Season, 
+                      Sector, Northings, Eastings,
+                      Hatched, Live_hatchlings, 
+                      Total_clutch, prop_success) %>%
   mutate(p_success = prop_success/100,
          f_Season = as.factor(Season),
          f_Sector = as.factor(Sector)) %>% 
@@ -356,7 +358,8 @@ zero.inund %>% select(Nest_Elevation, Berm_Dist, Season, Sector, Northings, East
 response <- zero.inund.2$p_success
 #response <- zero.inund.2$prop_success/100
 
-predictors <- zero.inund.2 %>% select(-c(p_success, f_Season, Season, f_Sector, Sector))
+predictors <- zero.inund.2 %>% select(-c(p_success, f_Season, 
+                                         Season, f_Sector, Sector))
 RF.data.zero.inund <- as.data.frame(scale(predictors))
 
 #RF.data.zero.inund$p_success <- asin(sqrt(response))

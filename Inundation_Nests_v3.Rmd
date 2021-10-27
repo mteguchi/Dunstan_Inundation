@@ -120,7 +120,7 @@ mu.y[i] <- b0[month[i], year[i]] + b1[month[i]] * Dist_Berm[i] + b12[month[i]] *
 
 y[i] ~ dnorm(mu.y[i], tau.y)  
 
-Results of model fitting is saved in a .rds file (ran in inundation_Nests_v2.Rmd).
+Results of model fitting is saved in a .rds file (ran in inundation_v3.Rmd).
 ```{r}
 jags.data <- list(y = inund$log_inund,
                   month = inund$Month2,
@@ -309,7 +309,7 @@ p.2
 
 
 ```{r}
-ggplot(nest.data.2) + 
+ggplot(nest.pred.data.month2) + 
   geom_errorbar(aes(x = scaled_Dist_Berm,
                     ymin = dif.nest.pred.2.5,
                     ymax = dif.nest.pred.97.5)) +
